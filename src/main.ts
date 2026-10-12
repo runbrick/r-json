@@ -119,6 +119,7 @@ let liveTimer = 0;
 let searchTimer = 0;
 let selectedPath = "$";
 let treeData: TreeNode[] = [];
+let pathMode: "jmes" | "json" = "jmes";
 const collapsedFolds = new Set<number>();
 let foldRanges: FoldRange[] = [];
 let skipLiveParse = false;
@@ -411,39 +412,70 @@ function kindLabel(kind: ValueKind): string {
   return "null";
 }
 
+function displayKey(node: TreeNode): string {
+  if (node.key === null) return "$";
+  return node.key;
+}
+
+function displayValue(node: TreeNode): string {
+  if (node.kind === "string") {
+    return node.preview.replace(/^"|"$/g, "");
+  }
+  return node.preview;
+}
+
 function renderTreeNode(node: TreeNode, expanded: boolean): HTMLElement {
-  const details = document.createElement("details");
-  details.open = expanded && node.children.length > 0 && node.children.length < 80;
-  const summary = document.createElement("button");
-  summary.type = "button";
-  summary.className = `tree-row${node.id === selectedId ? " active" : ""}`;
+  const item = document.createElement("div");
+  item.className = "tree-node";
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = `tree-row${node.id === selectedId ? " active" : ""}`;
   const hasChildren = node.children.length > 0;
   const count = node.kind === "array" || node.kind === "object"
     ? `<span class="tree-count">(${node.childCount})</span>`
     : "";
   const valueClass = node.kind === "boolean"
-    ? `boolean ${node.preview === "true" ? "true" : "false"}`
-    : node.kind;
-  const value = node.kind === "object" || node.kind === "array" ? "" : `<span class="${valueClass}">${escapeHtml(node.preview)}</span>`;
-  summary.innerHTML = `<span class="tree-toggle">${hasChildren ? "▾" : " "}</span><span class="kind ${node.kind}">${kindLabel(node.kind)}</span><strong class="key">${escapeHtml(node.key ?? "$")}</strong>${count}${value}`;
-  summary.addEventListener("click", (event) => {
-    event.preventDefault();
-    void selectNode(node.id);
-    if (hasChildren) details.open = !details.open;
-  });
-  details.append(summary);
+    ? `tree-value boolean ${node.preview === "true" ? "true" : "false"}`
+    : `tree-value ${node.kind}`;
+  const value = node.kind === "object" || node.kind === "array"
+    ? ""
+    : `<span class="tree-colon">:</span><span class="${valueClass}">${escapeHtml(displayValue(node))}</span>`;
+  row.innerHTML = `<span class="tree-toggle${hasChildren ? " has-children" : ""}">${hasChildren ? (expanded ? "▾" : "▸") : ""}</span><span class="kind ${node.kind}">${kindLabel(node.kind)}</span><span class="tree-key">${escapeHtml(displayKey(node))}</span>${count}${value}<span class="tree-actions"><button class="tree-action" type="button" data-copy="path" title="复制路径"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h8M8 4l4 4-4 4" /></svg></button><button class="tree-action" type="button" data-copy="value" title="复制值"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" /><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5" /></svg></button></span>`;
+  const children = document.createElement("div");
+  children.className = "tree-children";
+  children.hidden = !expanded;
   if (hasChildren) {
-    const children = document.createElement("div");
-    children.className = "tree-children";
-    for (const child of node.children) children.append(renderTreeNode(child, node.children.length < 12));
+    for (const child of node.children) {
+      children.append(renderTreeNode(child, node.children.length < 12 && expanded));
+    }
     if (node.truncatedChildren) {
       const note = document.createElement("small");
       note.textContent = `还有 ${node.childCount - node.children.length} 项`;
       children.append(note);
     }
-    details.append(children);
   }
-  return details;
+  row.querySelectorAll<HTMLButtonElement>(".tree-action").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void copyTreeNode(node, button.dataset.copy === "path" ? "path" : "value", button);
+    });
+  });
+  row.addEventListener("click", (event) => {
+    event.preventDefault();
+    selectedId = node.id;
+    selectedPath = node.path;
+    treePane.querySelectorAll(".tree-row.active").forEach((item) => item.classList.remove("active"));
+    row.classList.add("active");
+    if (!hasChildren) return;
+    const nextOpen = children.hidden;
+    children.hidden = !nextOpen;
+    const toggle = row.querySelector(".tree-toggle");
+    if (toggle) toggle.textContent = nextOpen ? "▾" : "▸";
+  });
+  item.append(row);
+  if (hasChildren) item.append(children);
+  return item;
 }
 
 async function selectNode(nodeId: number) {
@@ -453,14 +485,44 @@ async function selectNode(nodeId: number) {
   const detail = await invoke<{ path: string; json: string }>("node_detail", { nodeId });
   selectedPath = detail.path;
   renderTree(treeData);
-  openModal(detail.path, detail.json);
 }
 
-function toJmesPath(path: string): string {
-  return path
-    .replace(/^\$\.?/, "")
-    .replace(/\["([^"]+)"\]/g, ".$1")
-    .replace(/^\./, "");
+async function copyTreeNode(node: TreeNode, kind: "path" | "value", button: HTMLButtonElement) {
+  const value = kind === "path"
+    ? pathForCopy(node.path)
+    : await invoke<{ path: string; json: string }>("node_detail", { nodeId: node.id }).then((detail) => detail.json);
+  await navigator.clipboard.writeText(value);
+  showCopyHint(button, kind === "path" ? `复制${pathModeLabel()}` : "复制值");
+}
+
+function showCopyHint(anchor: HTMLElement, label: string) {
+  document.querySelectorAll(".copy-hint").forEach((hint) => hint.remove());
+  const hint = document.createElement("span");
+  hint.className = "copy-hint";
+  hint.textContent = label;
+  const bounds = anchor.getBoundingClientRect();
+  hint.style.left = `${bounds.left + bounds.width / 2}px`;
+  hint.style.top = `${bounds.top - 8}px`;
+  document.body.append(hint);
+  window.setTimeout(() => hint.remove(), 1200);
+}
+
+function pathForCopy(path: string): string {
+  return pathMode === "jmes" ? toJmesPath(path) : path;
+}
+
+function pathModeLabel(): string {
+  return pathMode === "jmes" ? "JMESPath" : "JSONPath";
+}
+
+function syncPathModeUi() {
+  const label = document.getElementById("path-mode-label");
+  const search = document.getElementById("search") as HTMLInputElement | null;
+  if (label) label.textContent = pathModeLabel();
+  if (search) search.placeholder = `${pathModeLabel()} 查询…`;
+  document.querySelectorAll<HTMLButtonElement>("[data-path-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.pathMode === pathMode);
+  });
 }
 
 async function copyText(value: string, label: string) {
@@ -743,7 +805,6 @@ function bindInterface() {
     else void document.documentElement.requestFullscreen();
   };
   byId("toggle-editor").onclick = () => byId("workspace").classList.toggle("editor-open");
-  byId("toggle-query").onclick = () => byId("query-dock").classList.toggle("hidden");
   byId("open-schema").onclick = () => void openSchemaModal(true);
   byId("schema-modal-close").onclick = () => schemaModal.classList.add("hidden");
   byId("schema-generate").onclick = () => void openSchemaModal(true);
@@ -754,6 +815,29 @@ function bindInterface() {
   byId("copy-result").onclick = () => void copyText(modalBody.textContent ?? "", "JSON");
   byId("copy-jsonpath").onclick = () => void copyText(selectedPath, "JSONPath");
   byId("copy-jmespath").onclick = () => void copyText(toJmesPath(selectedPath), "JMESPath");
+  const pathModeMenu = byId("path-mode-menu");
+  const pathModeRoot = document.querySelector<HTMLElement>(".path-mode")!;
+  byId("path-mode-trigger").onclick = (event) => {
+    event.stopPropagation();
+    pathModeRoot.classList.toggle("open");
+    pathModeMenu.classList.toggle("hidden");
+  };
+  document.querySelectorAll<HTMLButtonElement>("[data-path-mode]").forEach((button) => {
+    button.onclick = () => {
+      pathMode = button.dataset.pathMode === "json" ? "json" : "jmes";
+      syncPathModeUi();
+      pathModeRoot.classList.remove("open");
+      pathModeMenu.classList.add("hidden");
+    };
+  });
+  document.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement;
+    if (!target.closest(".path-mode")) {
+      pathModeRoot.classList.remove("open");
+      pathModeMenu.classList.add("hidden");
+    }
+  });
+  syncPathModeUi();
   byId<HTMLButtonElement>("run-query").onclick = async () => {
     const mode = byId<HTMLSelectElement>("query-mode").value;
     const expression = byId<HTMLInputElement>("query-input").value;

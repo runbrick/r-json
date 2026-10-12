@@ -89,7 +89,6 @@
             <button class="cmd" data-tool="unescape">反转义</button>
             <button class="cmd" data-tool="minify-escape">压缩转义</button>
             <span class="cmd-sep"></span>
-            <button class="cmd" id="toggle-query">JSONPath</button>
             <button class="cmd" id="open-schema">Schema</button>
             <button class="cmd" data-generate="typescript">生成代码</button>
           </div>
@@ -103,12 +102,28 @@
         <section class="canvas-pane" id="canvas-pane">
           <div class="inspector-toolbar">
             <div class="view-tabs">
-              <button class="view-tab active" data-view="tree">树形</button>
-              <button class="view-tab" data-view="graph">图形</button>
+              <button class="view-tab active" data-view="tree">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3h5M2 8h5M2 13h5M10 5l4 3-4 3" /></svg>
+                树形
+              </button>
+              <button class="view-tab" data-view="graph">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1" /><rect x="9" y="9" width="5" height="5" rx="1" /><path d="M7 4.5h2.5V9" /></svg>
+                图形
+              </button>
             </div>
             <div class="search-wrap">
-              <input id="search" placeholder="JSONPath 查询…" />
+              <input id="search" placeholder="JMESPath 查询…" />
               <div id="search-results" class="search-results hidden"></div>
+              <div class="path-mode">
+                <button id="path-mode-trigger" class="path-mode-trigger" type="button">
+                  <span id="path-mode-label">JMESPath</span>
+                  <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 8l3-3.5" /></svg>
+                </button>
+                <div id="path-mode-menu" class="path-mode-menu hidden">
+                  <button type="button" data-path-mode="jmes">JMESPath</button>
+                  <button type="button" data-path-mode="json">JSONPath</button>
+                </div>
+              </div>
             </div>
           </div>
           <div id="empty" class="empty hidden">
