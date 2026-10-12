@@ -48,9 +48,7 @@ pub fn json_path(value: &Value, expression: &str) -> Result<Vec<Value>, String> 
             return Err("Recursive descent is available through jq".to_string());
         }
         if let Some(rest) = remainder.strip_prefix('[') {
-            let (token, after) = rest
-                .split_once(']')
-                .ok_or_else(|| "Unclosed JSON Path bracket".to_string())?;
+            let (token, after) = split_bracket(rest)?;
             matches = step_bracket(matches, token)?;
             remainder = after;
         } else if let Some(rest) = remainder.strip_prefix('.') {
@@ -157,12 +155,19 @@ fn apply_jmes_bracket(values: Vec<Value>, token: &str) -> Result<Vec<Value>, Str
     if token == "*" {
         return step_bracket(values, "*");
     }
-    if let Some(index) = token.strip_prefix('-').and_then(|digits| digits.parse::<usize>().ok()) {
+    if let Some(index) = token
+        .strip_prefix('-')
+        .and_then(|digits| digits.parse::<usize>().ok())
+    {
         return Ok(values
             .into_iter()
             .filter_map(|value| {
                 value.as_array().and_then(|items| {
-                    items.len().checked_sub(index).and_then(|position| items.get(position)).cloned()
+                    items
+                        .len()
+                        .checked_sub(index)
+                        .and_then(|position| items.get(position))
+                        .cloned()
                 })
             })
             .collect());
@@ -195,8 +200,13 @@ fn slice_array(value: Value, token: &str) -> Vec<Value> {
     };
     let mut parts = token.split(':');
     let start = parts.next().and_then(|text| parse_bound(text, items.len(), 0));
-    let end = parts.next().and_then(|text| parse_bound(text, items.len(), items.len()));
-    let step = parts.next().and_then(|text| text.parse::<isize>().ok()).unwrap_or(1);
+    let end = parts
+        .next()
+        .and_then(|text| parse_bound(text, items.len(), items.len()));
+    let step = parts
+        .next()
+        .and_then(|text| text.parse::<isize>().ok())
+        .unwrap_or(1);
     let (Some(start), Some(end)) = (start, end) else {
         return Vec::new();
     };

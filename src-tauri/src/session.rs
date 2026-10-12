@@ -4,13 +4,14 @@ use std::time::Instant;
 use rayon::prelude::*;
 use serde_json::Value;
 
-use crate::index::{count_kinds, DocumentIndex};
+use crate::index::{count_kinds, DocumentIndex, Record};
 use crate::layout;
 use crate::model::{
     DocumentStats, FormatKind, LayoutDirection, LoadedDocument, NodeDetail, SearchHit, TextWindow,
     MAX_SEARCH_HITS,
 };
 use crate::parse::{detect_format, parse_to_json};
+use crate::query::{jmes_path, json_path};
 
 pub struct Session {
     pub value: Value,
@@ -73,10 +74,23 @@ impl Session {
     }
 
     pub fn search(&self, query: &str) -> Vec<SearchHit> {
-        let needle = query.trim().to_ascii_lowercase();
-        if needle.is_empty() {
-            return Vec::new();
+        self.query_hits("text", query).unwrap_or_default()
+    }
+
+    pub fn query_hits(&self, mode: &str, query: &str) -> Result<Vec<SearchHit>, String> {
+        let expression = query.trim();
+        if expression.is_empty() {
+            return Ok(Vec::new());
         }
+        match mode {
+            "jmes" => Ok(self.hits_from_values(jmes_path(&self.value, expression)?, "jmes")),
+            "json" | "path" => Ok(self.hits_from_values(json_path(&self.value, expression)?, "json")),
+            _ => Ok(self.text_search(expression)),
+        }
+    }
+
+    fn text_search(&self, query: &str) -> Vec<SearchHit> {
+        let needle = query.to_ascii_lowercase();
         self.index
             .records
             .par_iter()
@@ -90,20 +104,59 @@ impl Session {
                 if !(key_match || value_match || path_match) {
                     return None;
                 }
-                let (line, column) = self.index.line_column(record.byte_start);
-                Some(SearchHit {
-                    node_id: record.id,
-                    path: record.path.clone(),
-                    key: record.key.clone(),
-                    preview: record.preview.clone(),
-                    line,
-                    column,
-                })
+                Some(self.hit_from_record(record, record.preview.clone()))
             })
             .collect::<Vec<_>>()
             .into_iter()
             .take(MAX_SEARCH_HITS)
             .collect()
+    }
+
+    fn hits_from_values(&self, values: Vec<Value>, mode: &str) -> Vec<SearchHit> {
+        values
+            .into_iter()
+            .take(MAX_SEARCH_HITS)
+            .enumerate()
+            .map(|(index, value)| {
+                let preview = preview_value(&value);
+                if let Some(record) = self.index.record_for_path(&self.value_path(&value)) {
+                    return self.hit_from_record(record, preview);
+                }
+                SearchHit {
+                    node_id: 0,
+                    path: format!("{mode}[{index}]"),
+                    key: None,
+                    preview,
+                    line: 1,
+                    column: 1,
+                }
+            })
+            .collect()
+    }
+
+    fn hit_from_record(&self, record: &Record, preview: String) -> SearchHit {
+        let (line, column) = self.index.line_column(record.byte_start);
+        SearchHit {
+            node_id: record.id,
+            path: record.path.clone(),
+            key: record.key.clone(),
+            preview,
+            line,
+            column,
+        }
+    }
+
+    fn value_path(&self, value: &Value) -> String {
+        self.index
+            .records
+            .iter()
+            .find(|record| {
+                self.index
+                    .node_value(record.id)
+                    .is_some_and(|candidate| candidate == *value)
+            })
+            .map(|record| record.path.clone())
+            .unwrap_or_else(|| "$".to_string())
     }
 
     pub fn detail(&self, node_id: u32) -> Option<NodeDetail> {
@@ -136,5 +189,16 @@ impl Session {
 
     pub fn graph(&self) -> crate::model::GraphPayload {
         crate::layout::layout(&self.index.records, &self.collapsed, self.direction)
+    }
+}
+
+fn preview_value(value: &Value) -> String {
+    match value {
+        Value::String(text) => format!("\"{}\"", text.chars().take(72).collect::<String>()),
+        Value::Number(number) => number.to_string(),
+        Value::Bool(flag) => flag.to_string(),
+        Value::Null => "null".to_string(),
+        Value::Array(items) => format!("[{} items]", items.len()),
+        Value::Object(object) => format!("{{{} keys}}", object.len()),
     }
 }

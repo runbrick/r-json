@@ -112,14 +112,14 @@ fn expand_all(state: State<AppState>, expanded: bool) -> Result<GraphPayload, St
 }
 
 #[tauri::command]
-fn search_document(state: State<AppState>, query: String) -> Result<Vec<SearchHit>, String> {
-    state
-        .session
-        .lock()
-        .expect("session lock")
-        .as_ref()
-        .map(|session| session.search(&query))
-        .ok_or_else(|| "No document is loaded".to_string())
+fn search_document(
+    state: State<AppState>,
+    query: String,
+    mode: Option<String>,
+) -> Result<Vec<SearchHit>, String> {
+    let guard = state.session.lock().expect("session lock");
+    let session = guard.as_ref().ok_or_else(|| "No document is loaded".to_string())?;
+    session.query_hits(mode.as_deref().unwrap_or("text"), &query)
 }
 
 #[tauri::command]

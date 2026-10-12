@@ -42,6 +42,10 @@ impl DocumentIndex {
         value_at_path(&self.root, &self.records.get(id as usize)?.path)
     }
 
+    pub fn record_for_path(&self, path: &str) -> Option<&Record> {
+        self.records.iter().find(|record| record.path == path)
+    }
+
     pub fn line_column(&self, byte_offset: u32) -> (u32, u32) {
         let index = self
             .line_starts
