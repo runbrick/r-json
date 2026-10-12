@@ -575,6 +575,7 @@ button:disabled { opacity: 0.4; cursor: default; }
   text-align: left;
   white-space: nowrap;
   color: var(--text);
+  cursor: pointer;
 }
 .tree-row:hover { background: var(--hover); }
 .tree-row.active { background: var(--selected); }

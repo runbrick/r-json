@@ -427,8 +427,7 @@ function displayValue(node: TreeNode): string {
 function renderTreeNode(node: TreeNode, expanded: boolean): HTMLElement {
   const item = document.createElement("div");
   item.className = "tree-node";
-  const row = document.createElement("button");
-  row.type = "button";
+  const row = document.createElement("div");
   row.className = `tree-row${node.id === selectedId ? " active" : ""}`;
   const hasChildren = node.children.length > 0;
   const count = node.kind === "array" || node.kind === "object"
@@ -462,7 +461,7 @@ function renderTreeNode(node: TreeNode, expanded: boolean): HTMLElement {
     });
   });
   row.addEventListener("click", (event) => {
-    event.preventDefault();
+    if ((event.target as HTMLElement).closest(".tree-action")) return;
     selectedId = node.id;
     selectedPath = node.path;
     treePane.querySelectorAll(".tree-row.active").forEach((item) => item.classList.remove("active"));
@@ -488,11 +487,19 @@ async function selectNode(nodeId: number) {
 }
 
 async function copyTreeNode(node: TreeNode, kind: "path" | "value", button: HTMLButtonElement) {
-  const value = kind === "path"
-    ? pathForCopy(node.path)
-    : await invoke<{ path: string; json: string }>("node_detail", { nodeId: node.id }).then((detail) => detail.json);
-  await navigator.clipboard.writeText(value);
-  showCopyHint(button, kind === "path" ? `复制${pathModeLabel()}` : "复制值");
+  try {
+    const value = kind === "path"
+      ? pathForCopy(node.path)
+      : await invoke<{ path: string; json: string }>("node_detail", { nodeId: node.id }).then((detail) => detail.json);
+    await navigator.clipboard.writeText(value);
+    showCopyHint(button, kind === "path" ? `复制${pathModeLabel()}` : "复制值");
+  } catch (error) {
+    showCopyHint(button, `复制失败: ${String(error)}`);
+  }
+}
+
+function pathForCopy(path: string): string {
+  return pathMode === "jmes" ? toJmesPath(path) : toJsonPath(path);
 }
 
 function showCopyHint(anchor: HTMLElement, label: string) {
@@ -507,8 +514,55 @@ function showCopyHint(anchor: HTMLElement, label: string) {
   window.setTimeout(() => hint.remove(), 1200);
 }
 
-function pathForCopy(path: string): string {
-  return pathMode === "jmes" ? toJmesPath(path) : path;
+function toJmesPath(path: string): string {
+  if (!path || path === "$") return "@";
+  const segments = pathSegments(path);
+  let output = "";
+  for (const segment of segments) {
+    if (segment.kind === "index") {
+      output += `[${segment.value}]`;
+      continue;
+    }
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(segment.value)) {
+      output += output ? `.${segment.value}` : segment.value;
+    } else {
+      output += `."${segment.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+    }
+  }
+  return output || "@";
+}
+
+function toJsonPath(path: string): string {
+  if (!path || path === "$") return "$";
+  const segments = pathSegments(path);
+  let output = "$";
+  for (const segment of segments) {
+    if (segment.kind === "index") {
+      output += `[${segment.value}]`;
+    } else {
+      output += `['${segment.value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}']`;
+    }
+  }
+  return output;
+}
+
+function pathSegments(path: string): Array<{ kind: "key" | "index"; value: string }> {
+  const segments: Array<{ kind: "key" | "index"; value: string }> = [];
+  const source = path.startsWith("$") ? path.slice(1) : path;
+  const pattern = /\[(\d+)\]|\["((?:\\.|[^"\\])*)"\]|\['((?:\\.|[^'\\])*)'\]|\.([A-Za-z_][A-Za-z0-9_]*)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(source))) {
+    if (match[1] !== undefined) {
+      segments.push({ kind: "index", value: match[1] });
+    } else if (match[2] !== undefined) {
+      segments.push({ kind: "key", value: match[2].replace(/\\"/g, '"') });
+    } else if (match[3] !== undefined) {
+      segments.push({ kind: "key", value: match[3].replace(/\\'/g, "'") });
+    } else if (match[4] !== undefined) {
+      segments.push({ kind: "key", value: match[4] });
+    }
+  }
+  return segments;
 }
 
 function pathModeLabel(): string {
