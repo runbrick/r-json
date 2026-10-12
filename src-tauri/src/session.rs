@@ -11,7 +11,7 @@ use crate::model::{
     MAX_SEARCH_HITS,
 };
 use crate::parse::{detect_format, parse_to_json};
-use crate::query::{jmes_path, json_path};
+use crate::query::{jmes_path_located, json_path_located, LocatedValue};
 
 pub struct Session {
     pub value: Value,
@@ -83,8 +83,8 @@ impl Session {
             return Ok(Vec::new());
         }
         match mode {
-            "jmes" => Ok(self.hits_from_values(jmes_path(&self.value, expression)?, "jmes")),
-            "json" | "path" => Ok(self.hits_from_values(json_path(&self.value, expression)?, "json")),
+            "jmes" => Ok(self.hits_from_located(jmes_path_located(&self.value, expression)?)),
+            "json" | "path" => Ok(self.hits_from_located(json_path_located(&self.value, expression)?)),
             _ => Ok(self.text_search(expression)),
         }
     }
@@ -112,19 +112,18 @@ impl Session {
             .collect()
     }
 
-    fn hits_from_values(&self, values: Vec<Value>, mode: &str) -> Vec<SearchHit> {
+    fn hits_from_located(&self, values: Vec<LocatedValue>) -> Vec<SearchHit> {
         values
             .into_iter()
             .take(MAX_SEARCH_HITS)
-            .enumerate()
-            .map(|(index, value)| {
-                let preview = preview_value(&value);
-                if let Some(record) = self.index.record_for_path(&self.value_path(&value)) {
+            .map(|item| {
+                let preview = preview_value(&item.value);
+                if let Some(record) = self.index.record_for_path(&item.path) {
                     return self.hit_from_record(record, preview);
                 }
                 SearchHit {
                     node_id: 0,
-                    path: format!("{mode}[{index}]"),
+                    path: item.path,
                     key: None,
                     preview,
                     line: 1,
@@ -146,17 +145,13 @@ impl Session {
         }
     }
 
-    fn value_path(&self, value: &Value) -> String {
-        self.index
-            .records
-            .iter()
-            .find(|record| {
-                self.index
-                    .node_value(record.id)
-                    .is_some_and(|candidate| candidate == *value)
-            })
-            .map(|record| record.path.clone())
-            .unwrap_or_else(|| "$".to_string())
+    pub fn reveal_node(&mut self, node_id: u32) -> crate::model::GraphPayload {
+        let mut cursor = Some(node_id);
+        while let Some(id) = cursor {
+            self.collapsed.remove(&id);
+            cursor = self.index.records.get(id as usize).and_then(|record| record.parent);
+        }
+        self.graph()
     }
 
     pub fn detail(&self, node_id: u32) -> Option<NodeDetail> {

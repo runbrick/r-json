@@ -112,6 +112,13 @@ fn expand_all(state: State<AppState>, expanded: bool) -> Result<GraphPayload, St
 }
 
 #[tauri::command]
+fn reveal_node(state: State<AppState>, node_id: u32) -> Result<GraphPayload, String> {
+    let mut guard = state.session.lock().expect("session lock");
+    let session = guard.as_mut().ok_or_else(|| "No document is loaded".to_string())?;
+    Ok(session.reveal_node(node_id))
+}
+
+#[tauri::command]
 fn search_document(
     state: State<AppState>,
     query: String,
@@ -238,6 +245,7 @@ pub fn run() {
             set_layout,
             toggle_node,
             expand_all,
+            reveal_node,
             search_document,
             node_detail,
             text_window,

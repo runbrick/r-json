@@ -3,6 +3,14 @@ use std::collections::BTreeMap;
 
 use crate::model::{TreeNode, ValueKind, MAX_TREE_CHILDREN};
 
+pub(crate) fn child_key_path(parent: &str, key: &str) -> String {
+    object_path(parent, key)
+}
+
+pub(crate) fn child_index_path(parent: &str, index: usize) -> String {
+    format!("{parent}[{index}]")
+}
+
 #[derive(Debug)]
 pub struct Record {
     pub id: u32,

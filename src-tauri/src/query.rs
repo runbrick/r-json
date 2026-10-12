@@ -5,6 +5,13 @@ use jaq_json::Val;
 use jaq_std::{defs, funs};
 use serde_json::Value;
 
+use crate::index::{child_index_path, child_key_path};
+
+pub struct LocatedValue {
+    pub path: String,
+    pub value: Value,
+}
+
 pub fn run_jq(value: &Value, program: &str) -> Result<Vec<Value>, String> {
     let program = if program.trim().is_empty() { "." } else { program };
     let arena = Arena::default();
@@ -34,14 +41,27 @@ pub fn run_jq(value: &Value, program: &str) -> Result<Vec<Value>, String> {
 }
 
 pub fn json_path(value: &Value, expression: &str) -> Result<Vec<Value>, String> {
+    Ok(json_path_located(value, expression)?
+        .into_iter()
+        .map(|item| item.value)
+        .collect())
+}
+
+pub fn json_path_located(value: &Value, expression: &str) -> Result<Vec<LocatedValue>, String> {
     let path = expression.trim();
     if path.is_empty() || path == "$" {
-        return Ok(vec![value.clone()]);
+        return Ok(vec![LocatedValue {
+            path: "$".to_string(),
+            value: value.clone(),
+        }]);
     }
     let body = path
         .strip_prefix('$')
         .ok_or_else(|| "JSON Path must start with $".to_string())?;
-    let mut matches = vec![value.clone()];
+    let mut matches = vec![LocatedValue {
+        path: "$".to_string(),
+        value: value.clone(),
+    }];
     let mut remainder = body;
     while !remainder.is_empty() {
         if remainder.starts_with("..") {
@@ -49,15 +69,12 @@ pub fn json_path(value: &Value, expression: &str) -> Result<Vec<Value>, String> 
         }
         if let Some(rest) = remainder.strip_prefix('[') {
             let (token, after) = split_bracket(rest)?;
-            matches = step_bracket(matches, token)?;
+            matches = step_bracket_located(matches, token)?;
             remainder = after;
         } else if let Some(rest) = remainder.strip_prefix('.') {
             let end = rest.find(['.', '[']).unwrap_or(rest.len());
             let key = &rest[..end];
-            matches = matches
-                .into_iter()
-                .filter_map(|item| item.get(key).cloned())
-                .collect();
+            matches = step_key_located(matches, key);
             remainder = &rest[end..];
         } else {
             return Err(format!("Unsupported JSON Path token near {remainder}"));
@@ -66,36 +83,83 @@ pub fn json_path(value: &Value, expression: &str) -> Result<Vec<Value>, String> 
     Ok(matches)
 }
 
-fn step_bracket(values: Vec<Value>, token: &str) -> Result<Vec<Value>, String> {
-    if token == "*" {
-        return Ok(values
-            .into_iter()
-            .flat_map(|value| match value {
-                Value::Array(items) => items,
-                Value::Object(object) => object.into_values().collect(),
-                other => vec![other],
+fn step_key_located(values: Vec<LocatedValue>, key: &str) -> Vec<LocatedValue> {
+    values
+        .into_iter()
+        .filter_map(|item| {
+            item.value.get(key).cloned().map(|child| LocatedValue {
+                path: child_key_path(&item.path, key),
+                value: child,
             })
-            .collect());
+        })
+        .collect()
+}
+
+fn step_bracket_located(values: Vec<LocatedValue>, token: &str) -> Result<Vec<LocatedValue>, String> {
+    if token == "*" {
+        return Ok(values.into_iter().flat_map(expand_children).collect());
     }
     if let Ok(index) = token.parse::<usize>() {
         return Ok(values
             .into_iter()
-            .filter_map(|value| value.as_array().and_then(|items| items.get(index)).cloned())
+            .filter_map(|item| {
+                item.value
+                    .as_array()
+                    .and_then(|items| items.get(index).cloned())
+                    .map(|child| LocatedValue {
+                        path: child_index_path(&item.path, index),
+                        value: child,
+                    })
+            })
             .collect());
     }
     let key = token.trim_matches(|character| character == '"' || character == '\'');
-    Ok(values
-        .into_iter()
-        .filter_map(|value| value.get(key).cloned())
-        .collect())
+    Ok(step_key_located(values, key))
+}
+
+fn expand_children(item: LocatedValue) -> Vec<LocatedValue> {
+    match item.value {
+        Value::Array(items) => items
+            .into_iter()
+            .enumerate()
+            .map(|(index, child)| LocatedValue {
+                path: child_index_path(&item.path, index),
+                value: child,
+            })
+            .collect(),
+        Value::Object(object) => object
+            .into_iter()
+            .map(|(key, child)| LocatedValue {
+                path: child_key_path(&item.path, &key),
+                value: child,
+            })
+            .collect(),
+        other => vec![LocatedValue {
+            path: item.path,
+            value: other,
+        }],
+    }
 }
 
 pub fn jmes_path(value: &Value, expression: &str) -> Result<Vec<Value>, String> {
+    Ok(jmes_path_located(value, expression)?
+        .into_iter()
+        .map(|item| item.value)
+        .collect())
+}
+
+pub fn jmes_path_located(value: &Value, expression: &str) -> Result<Vec<LocatedValue>, String> {
     let expression = expression.trim();
     if expression.is_empty() || expression == "@" {
-        return Ok(vec![value.clone()]);
+        return Ok(vec![LocatedValue {
+            path: "$".to_string(),
+            value: value.clone(),
+        }]);
     }
-    let mut cursor = vec![value.clone()];
+    let mut cursor = vec![LocatedValue {
+        path: "$".to_string(),
+        value: value.clone(),
+    }];
     let mut remainder = expression;
     while !remainder.is_empty() {
         remainder = remainder.trim_start_matches('.');
@@ -104,27 +168,17 @@ pub fn jmes_path(value: &Value, expression: &str) -> Result<Vec<Value>, String> 
         }
         if let Some(rest) = remainder.strip_prefix('[') {
             let (token, after) = split_bracket(rest)?;
-            cursor = apply_jmes_bracket(cursor, token)?;
+            cursor = apply_jmes_bracket_located(cursor, token)?;
             remainder = after;
             continue;
         }
         let end = remainder.find(['.', '[']).unwrap_or(remainder.len());
         let identifier = &remainder[..end];
-        if identifier == "*" {
-            cursor = cursor
-                .into_iter()
-                .flat_map(|item| match item {
-                    Value::Array(items) => items,
-                    Value::Object(object) => object.into_values().collect(),
-                    other => vec![other],
-                })
-                .collect();
+        cursor = if identifier == "*" {
+            cursor.into_iter().flat_map(expand_children).collect()
         } else {
-            cursor = cursor
-                .into_iter()
-                .filter_map(|item| item.get(identifier).cloned())
-                .collect();
-        }
+            step_key_located(cursor, identifier)
+        };
         remainder = &remainder[end..];
     }
     Ok(cursor)
@@ -150,10 +204,13 @@ fn split_bracket(text: &str) -> Result<(&str, &str), String> {
     Err("Unclosed JMESPath bracket".to_string())
 }
 
-fn apply_jmes_bracket(values: Vec<Value>, token: &str) -> Result<Vec<Value>, String> {
+fn apply_jmes_bracket_located(
+    values: Vec<LocatedValue>,
+    token: &str,
+) -> Result<Vec<LocatedValue>, String> {
     let token = token.trim();
     if token == "*" {
-        return step_bracket(values, "*");
+        return Ok(values.into_iter().flat_map(expand_children).collect());
     }
     if let Some(index) = token
         .strip_prefix('-')
@@ -161,13 +218,14 @@ fn apply_jmes_bracket(values: Vec<Value>, token: &str) -> Result<Vec<Value>, Str
     {
         return Ok(values
             .into_iter()
-            .filter_map(|value| {
-                value.as_array().and_then(|items| {
-                    items
-                        .len()
-                        .checked_sub(index)
-                        .and_then(|position| items.get(position))
-                        .cloned()
+            .filter_map(|item| {
+                item.value.as_array().and_then(|items| {
+                    items.len().checked_sub(index).and_then(|position| {
+                        items.get(position).cloned().map(|child| (position, child))
+                    })
+                }).map(|(position, child)| LocatedValue {
+                    path: child_index_path(&item.path, position),
+                    value: child,
                 })
             })
             .collect());
@@ -175,27 +233,30 @@ fn apply_jmes_bracket(values: Vec<Value>, token: &str) -> Result<Vec<Value>, Str
     if token.contains(':') {
         return Ok(values
             .into_iter()
-            .flat_map(|value| slice_array(value, token))
+            .flat_map(|item| slice_array_located(item, token))
             .collect());
     }
     if let Some(list) = token.strip_prefix('[') {
         let mut output = Vec::new();
-        for value in values {
+        for item in values {
             for raw_index in list.trim_end_matches(']').split(',') {
                 if let Ok(index) = raw_index.trim().parse::<usize>() {
-                    if let Some(item) = value.as_array().and_then(|items| items.get(index)) {
-                        output.push(item.clone());
+                    if let Some(child) = item.value.as_array().and_then(|items| items.get(index)).cloned() {
+                        output.push(LocatedValue {
+                            path: child_index_path(&item.path, index),
+                            value: child,
+                        });
                     }
                 }
             }
         }
         return Ok(output);
     }
-    step_bracket(values, token)
+    step_bracket_located(values, token)
 }
 
-fn slice_array(value: Value, token: &str) -> Vec<Value> {
-    let Some(items) = value.as_array() else {
+fn slice_array_located(item: LocatedValue, token: &str) -> Vec<LocatedValue> {
+    let Some(items) = item.value.as_array() else {
         return Vec::new();
     };
     let mut parts = token.split(':');
@@ -217,8 +278,11 @@ fn slice_array(value: Value, token: &str) -> Vec<Value> {
     let mut index = start as isize;
     if step > 0 {
         while index < end as isize {
-            if let Some(item) = items.get(index as usize) {
-                output.push(item.clone());
+            if let Some(child) = items.get(index as usize) {
+                output.push(LocatedValue {
+                    path: child_index_path(&item.path, index as usize),
+                    value: child.clone(),
+                });
             }
             index += step;
         }

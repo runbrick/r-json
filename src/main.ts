@@ -11,6 +11,7 @@ interface FieldRow {
   key: string;
   value: string;
   kind: ValueKind;
+  nodeId: number;
 }
 
 interface GraphNode {
@@ -117,6 +118,9 @@ let selectedId: number | null = null;
 let fileName = "Untitled.json";
 let liveTimer = 0;
 let searchTimer = 0;
+let searchHits: SearchHit[] = [];
+let searchActiveIndex = -1;
+let searchRequestId = 0;
 let selectedPath = "$";
 let treeData: TreeNode[] = [];
 let pathMode: "jmes" | "json" = "jmes";
@@ -373,7 +377,10 @@ function renderGraph() {
     card.style.height = `${node.height}px`;
     const title = node.key ?? "$";
     const rows = node.rows
-      .map((row) => `<div class="node-row"><span class="key">${escapeHtml(row.key)}</span><span class="${escapeHtml(row.kind)}">${escapeHtml(row.value)}</span></div>`)
+      .map((row) => {
+        const selected = row.nodeId === selectedId ? " selected" : "";
+        return `<div class="node-row${selected}" data-row-id="${row.nodeId}"><span class="key">${escapeHtml(row.key)}</span><span class="${escapeHtml(row.kind)}">${escapeHtml(row.value)}</span></div>`;
+      })
       .join("");
     card.innerHTML = `<header><button class="collapse">${node.collapsed ? "+" : "–"}</button><span>${escapeHtml(title)}</span><span class="preview">${escapeHtml(node.preview)}</span></header>${rows}`;
     card.addEventListener("click", (event) => {
@@ -381,7 +388,9 @@ function renderGraph() {
         event.preventDefault();
         return;
       }
-      void selectNode(node.id);
+      const row = (event.target as HTMLElement).closest<HTMLElement>("[data-row-id]");
+      const rowId = row?.dataset.rowId ? Number(row.dataset.rowId) : node.id;
+      void selectNode(rowId);
     });
     card.querySelector("button")?.addEventListener("click", async (event) => {
       event.stopPropagation();
@@ -396,11 +405,31 @@ function renderGraph() {
   viewport.style.height = `${stage.height}px`;
 }
 
-function renderTree(nodes: TreeNode[]) {
+function collectAncestorIds(nodes: TreeNode[], targetId: number): Set<number> {
+  const ancestorIds = new Set<number>();
+  const walk = (list: TreeNode[]): boolean => {
+    for (const node of list) {
+      if (node.id === targetId) return true;
+      if (walk(node.children)) {
+        ancestorIds.add(node.id);
+        return true;
+      }
+    }
+    return false;
+  };
+  walk(nodes);
+  return ancestorIds;
+}
+
+function renderTree(nodes: TreeNode[], scrollToSelected = false) {
   treePane.replaceChildren();
+  const expandAncestors = selectedId === null ? new Set<number>() : collectAncestorIds(nodes, selectedId);
   const fragment = document.createDocumentFragment();
-  for (const node of nodes) fragment.append(renderTreeNode(node, true));
+  for (const node of nodes) fragment.append(renderTreeNode(node, true, expandAncestors));
   treePane.append(fragment);
+  if (scrollToSelected && selectedId !== null) {
+    treePane.querySelector<HTMLElement>(".tree-row.active")?.scrollIntoView({ block: "center" });
+  }
 }
 
 function kindLabel(kind: ValueKind): string {
@@ -424,12 +453,13 @@ function displayValue(node: TreeNode): string {
   return node.preview;
 }
 
-function renderTreeNode(node: TreeNode, expanded: boolean): HTMLElement {
+function renderTreeNode(node: TreeNode, expanded: boolean, expandAncestors: Set<number>): HTMLElement {
   const item = document.createElement("div");
   item.className = "tree-node";
   const row = document.createElement("div");
   row.className = `tree-row${node.id === selectedId ? " active" : ""}`;
   const hasChildren = node.children.length > 0;
+  const isExpanded = expanded || expandAncestors.has(node.id);
   const count = node.kind === "array" || node.kind === "object"
     ? `<span class="tree-count">(${node.childCount})</span>`
     : "";
@@ -439,13 +469,14 @@ function renderTreeNode(node: TreeNode, expanded: boolean): HTMLElement {
   const value = node.kind === "object" || node.kind === "array"
     ? ""
     : `<span class="tree-colon">:</span><span class="${valueClass}">${escapeHtml(displayValue(node))}</span>`;
-  row.innerHTML = `<span class="tree-toggle${hasChildren ? " has-children" : ""}">${hasChildren ? (expanded ? "▾" : "▸") : ""}</span><span class="kind ${node.kind}">${kindLabel(node.kind)}</span><span class="tree-key">${escapeHtml(displayKey(node))}</span>${count}${value}<span class="tree-actions"><button class="tree-action" type="button" data-copy="path" title="复制路径"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h8M8 4l4 4-4 4" /></svg></button><button class="tree-action" type="button" data-copy="value" title="复制值"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" /><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5" /></svg></button></span>`;
+  row.innerHTML = `<span class="tree-toggle${hasChildren ? " has-children" : ""}">${hasChildren ? (isExpanded ? "▾" : "▸") : ""}</span><span class="kind ${node.kind}">${kindLabel(node.kind)}</span><span class="tree-key">${escapeHtml(displayKey(node))}</span>${count}${value}<span class="tree-actions"><button class="tree-action" type="button" data-copy="path" title="复制路径"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h8M8 4l4 4-4 4" /></svg></button><button class="tree-action" type="button" data-copy="value" title="复制值"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" /><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5" /></svg></button></span>`;
   const children = document.createElement("div");
   children.className = "tree-children";
-  children.hidden = !expanded;
+  children.hidden = !isExpanded;
   if (hasChildren) {
     for (const child of node.children) {
-      children.append(renderTreeNode(child, node.children.length < 12 && expanded));
+      const expandChild = (node.children.length < 12 && isExpanded) || expandAncestors.has(child.id);
+      children.append(renderTreeNode(child, expandChild, expandAncestors));
     }
     if (node.truncatedChildren) {
       const note = document.createElement("small");
@@ -477,13 +508,17 @@ function renderTreeNode(node: TreeNode, expanded: boolean): HTMLElement {
   return item;
 }
 
-async function selectNode(nodeId: number) {
+async function selectNode(nodeId: number, path?: string) {
   selectedId = nodeId;
-  document.querySelectorAll(".node").forEach((node) => node.classList.remove("selected"));
+  if (path) selectedPath = path;
   renderGraph();
-  const detail = await invoke<{ path: string; json: string }>("node_detail", { nodeId });
-  selectedPath = detail.path;
-  renderTree(treeData);
+  renderTree(treeData, true);
+  try {
+    const detail = await invoke<{ path: string; json: string }>("node_detail", { nodeId });
+    selectedPath = detail.path;
+  } catch {
+    selectedPath = path ?? selectedPath;
+  }
 }
 
 async function copyTreeNode(node: TreeNode, kind: "path" | "value", button: HTMLButtonElement) {
@@ -569,6 +604,17 @@ function pathModeLabel(): string {
   return pathMode === "jmes" ? "JMESPath" : "JSONPath";
 }
 
+function syncSearchInputPath() {
+  const search = document.getElementById("search") as HTMLInputElement | null;
+  if (!search || !search.value.trim() || !selectedPath) return;
+  const current = search.value.trim();
+  const asJmes = toJmesPath(selectedPath);
+  const asJson = toJsonPath(selectedPath);
+  if (current === asJmes || current === asJson || current === selectedPath) {
+    search.value = suggestionPath(selectedPath);
+  }
+}
+
 function syncPathModeUi() {
   const label = document.getElementById("path-mode-label");
   const search = document.getElementById("search") as HTMLInputElement | null;
@@ -577,6 +623,8 @@ function syncPathModeUi() {
   document.querySelectorAll<HTMLButtonElement>("[data-path-mode]").forEach((button) => {
     button.classList.toggle("active", button.dataset.pathMode === pathMode);
   });
+  syncSearchInputPath();
+  if (searchHits.length > 0) renderSearchResults();
 }
 
 async function copyText(value: string, label: string) {
@@ -714,29 +762,113 @@ async function validateCurrentSchema() {
   }
 }
 
-async function search(query: string) {
-  if (!query.trim()) {
+function suggestionPath(path: string): string {
+  return pathForCopy(path);
+}
+
+function suggestionLabel(hit: SearchHit): string {
+  return suggestionPath(hit.path);
+}
+
+function hideSearchResults() {
+  window.clearTimeout(searchTimer);
+  searchRequestId += 1;
+  searchHits = [];
+  searchActiveIndex = -1;
+  searchResults.classList.add("hidden");
+  searchResults.replaceChildren();
+}
+
+function renderSearchResults() {
+  searchResults.replaceChildren();
+  if (searchHits.length === 0) {
     searchResults.classList.add("hidden");
     return;
   }
-  const hits = await invoke<SearchHit[]>("search_document", { query });
   searchResults.classList.remove("hidden");
-  searchResults.replaceChildren();
-  for (const hit of hits.slice(0, 80)) {
+  searchHits.forEach((hit, index) => {
     const button = document.createElement("button");
-    button.innerHTML = `<strong>${escapeHtml(hit.key ?? hit.path)}</strong><small>${escapeHtml(hit.path)} · ${escapeHtml(hit.preview)}</small>`;
-    button.onclick = () => {
-      selectedId = hit.nodeId;
-      renderGraph();
-      const node = graph?.nodes.find((item) => item.id === hit.nodeId);
-      if (node) {
-        camera.x = canvasPane.clientWidth / 2 - node.x * camera.scale;
-        camera.y = canvasPane.clientHeight / 2 - node.y * camera.scale;
-        applyCamera();
-      }
-      searchResults.classList.add("hidden");
-    };
+    button.type = "button";
+    button.className = index === searchActiveIndex ? "active" : "";
+    button.innerHTML = `<strong>${escapeHtml(suggestionLabel(hit))}</strong><small>${escapeHtml(hit.preview)}</small>`;
+    button.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+    });
+    button.addEventListener("click", () => {
+      void applySearchHit(hit);
+    });
     searchResults.append(button);
+  });
+  searchResults.querySelector<HTMLElement>("button.active")?.scrollIntoView({ block: "nearest" });
+}
+
+function moveSearchActive(delta: number) {
+  if (searchHits.length === 0) return;
+  const total = searchHits.length;
+  searchActiveIndex = (searchActiveIndex + delta + total) % total;
+  renderSearchResults();
+}
+
+function graphCardForNode(nodeId: number): GraphNode | undefined {
+  if (!graph) return undefined;
+  const exact = graph.nodes.find((item) => item.id === nodeId);
+  if (exact) return exact;
+  return graph.nodes.find((item) => item.rows.some((row) => row.nodeId === nodeId));
+}
+
+function focusGraphNode(nodeId: number) {
+  const node = graphCardForNode(nodeId);
+  if (!node) return;
+  camera.x = canvasPane.clientWidth / 2 - (node.x + node.width / 2) * camera.scale;
+  camera.y = canvasPane.clientHeight / 2 - (node.y + node.height / 2) * camera.scale;
+  applyCamera();
+}
+
+async function applySearchHit(hit: SearchHit) {
+  const input = byId<HTMLInputElement>("search");
+  input.value = suggestionLabel(hit);
+  hideSearchResults();
+  if (hit.nodeId) {
+    try {
+      graph = await invoke<GraphPayload>("reveal_node", { nodeId: hit.nodeId });
+    } catch {
+      // Keep the current graph if the node cannot be revealed.
+    }
+  }
+  await selectNode(hit.nodeId, hit.path);
+  focusGraphNode(hit.nodeId);
+}
+
+async function commitSearchFromInput() {
+  if (searchHits.length > 0) {
+    const index = searchActiveIndex >= 0 ? searchActiveIndex : 0;
+    await applySearchHit(searchHits[index]);
+    return;
+  }
+  const query = byId<HTMLInputElement>("search").value;
+  if (!query.trim()) return;
+  await search(query);
+  if (searchHits.length > 0) await applySearchHit(searchHits[0]);
+}
+
+async function search(query: string) {
+  const requestId = ++searchRequestId;
+  if (!query.trim()) {
+    hideSearchResults();
+    return;
+  }
+  try {
+    const hits = await invoke<SearchHit[]>("search_document", { query, mode: pathMode });
+    if (requestId !== searchRequestId) return;
+    searchHits = hits.slice(0, 80);
+    searchActiveIndex = searchHits.length > 0 ? 0 : -1;
+    renderSearchResults();
+  } catch {
+    if (requestId !== searchRequestId) return;
+    searchHits = [];
+    searchActiveIndex = -1;
+    searchResults.classList.add("hidden");
+    searchResults.replaceChildren();
   }
 }
 
@@ -948,9 +1080,32 @@ function bindInterface() {
     workspace.style.gridTemplateColumns = `${ratio * 100}% 6px minmax(280px, 1fr)`;
   });
   window.addEventListener("pointerup", () => { resizing = false; });
-  byId<HTMLInputElement>("search").addEventListener("input", (event) => {
+  const searchInput = byId<HTMLInputElement>("search");
+  searchInput.addEventListener("input", (event) => {
     window.clearTimeout(searchTimer);
     searchTimer = window.setTimeout(() => void search((event.target as HTMLInputElement).value), 80);
+  });
+  searchInput.addEventListener("keydown", (event) => {
+    const suggestionsOpen = !searchResults.classList.contains("hidden") && searchHits.length > 0;
+    if (event.key === "Escape") {
+      hideSearchResults();
+      return;
+    }
+    if (event.key === "ArrowDown" && suggestionsOpen) {
+      event.preventDefault();
+      moveSearchActive(1);
+      return;
+    }
+    if (event.key === "ArrowUp" && suggestionsOpen) {
+      event.preventDefault();
+      moveSearchActive(-1);
+      return;
+    }
+    if (event.key === "Tab" || event.key === "Enter") {
+      if (!suggestionsOpen && !searchInput.value.trim()) return;
+      event.preventDefault();
+      void commitSearchFromInput();
+    }
   });
 
   inspectorBody.addEventListener("wheel", (event) => {
@@ -1025,7 +1180,7 @@ function bindInterface() {
   });
   document.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
-    if (!target.closest(".search-wrap")) searchResults.classList.add("hidden");
+    if (!target.closest(".search-wrap")) hideSearchResults();
   });
 }
 

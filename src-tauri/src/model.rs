@@ -72,6 +72,7 @@ pub struct FieldRow {
     pub key: String,
     pub value: String,
     pub kind: ValueKind,
+    pub node_id: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

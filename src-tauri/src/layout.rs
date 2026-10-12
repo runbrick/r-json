@@ -278,6 +278,7 @@ fn inline_rows(records: &[Record], id: u32, collapsed: &HashSet<u32>) -> Vec<cra
                 key: child.key.clone().unwrap_or_else(|| child.id.to_string()),
                 value: child.preview.clone(),
                 kind: child.kind,
+                node_id: child.id,
             }
         })
         .collect()
