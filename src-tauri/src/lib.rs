@@ -7,6 +7,7 @@ mod parse;
 mod query;
 mod session;
 mod tree_node;
+mod validate;
 
 use std::fs;
 use std::path::Path;
@@ -21,6 +22,7 @@ use crate::convert::convert;
 use crate::model::{FormatKind, GraphPayload, LayoutDirection, LoadedDocument, NodeDetail, SearchHit, TextWindow};
 use crate::query::{json_path, jmes_path, run_jq};
 use crate::session::Session;
+use crate::validate::{validate_against_schema, ValidationReport};
 
 pub struct AppState {
     pub session: Mutex<Option<Session>>,
@@ -186,6 +188,15 @@ fn generate_schema(state: State<AppState>) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn validate_schema(state: State<AppState>, schema: String) -> Result<ValidationReport, String> {
+    let guard = state.session.lock().expect("session lock");
+    let session = guard.as_ref().ok_or_else(|| "No document is loaded".to_string())?;
+    let schema_value: Value =
+        serde_json::from_str(&schema).map_err(|error| format!("Schema 不是有效 JSON: {error}"))?;
+    Ok(validate_against_schema(&schema_value, &session.value))
+}
+
+#[tauri::command]
 fn query_jq(state: State<AppState>, program: String) -> Result<QueryResult, String> {
     let guard = state.session.lock().expect("session lock");
     let session = guard.as_ref().ok_or_else(|| "No document is loaded".to_string())?;
@@ -235,6 +246,7 @@ pub fn run() {
             convert_document,
             generate_code,
             generate_schema,
+            validate_schema,
             query_jq,
             query_path,
             query_jmes,

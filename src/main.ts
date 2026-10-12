@@ -75,7 +75,28 @@ interface SearchHit {
   preview: string;
 }
 
+interface ValidationIssue {
+  path: string;
+  message: string;
+}
+
+interface ValidationReport {
+  valid: boolean;
+  issues: ValidationIssue[];
+}
+
+interface FoldRange {
+  start: number;
+  end: number;
+}
+
 const editor = document.querySelector<HTMLTextAreaElement>("#editor")!;
+const jsonEditor = document.querySelector<HTMLElement>("#json-editor")!;
+const editorShell = document.querySelector<HTMLElement>("#editor-shell")!;
+const schemaModal = document.querySelector<HTMLElement>("#schema-modal")!;
+const schemaEditor = document.querySelector<HTMLTextAreaElement>("#schema-editor")!;
+const schemaResult = document.querySelector<HTMLElement>("#schema-result")!;
+const schemaStatus = document.querySelector<HTMLElement>("#schema-status")!;
 const nodesLayer = document.querySelector<HTMLElement>("#nodes")!;
 const edges = document.querySelector<SVGSVGElement>("#edges")!;
 const viewport = document.querySelector<HTMLElement>("#viewport")!;
@@ -96,8 +117,11 @@ let selectedId: number | null = null;
 let fileName = "Untitled.json";
 let liveTimer = 0;
 let searchTimer = 0;
-let currentView: "graph" | "tree" = "graph";
 let selectedPath = "$";
+let treeData: TreeNode[] = [];
+const collapsedFolds = new Set<number>();
+let foldRanges: FoldRange[] = [];
+let skipLiveParse = false;
 
 const SAMPLE = `{
   "project": "R JSON",
@@ -120,24 +144,176 @@ function byId<T extends HTMLElement>(id: string): T {
   return element as T;
 }
 
+const inspectorBody = document.querySelector<HTMLElement>("#inspector-body")!;
+const PAN_THRESHOLD = 4;
+let panMoved = false;
+
 function applyCamera() {
-  viewport.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`;
+  viewport.style.transform = `translate3d(${camera.x}px, ${camera.y}px, 0) scale(${camera.scale})`;
+}
+
+function graphStageSize(): { width: number; height: number } {
+  if (!graph || graph.nodes.length === 0) {
+    return { width: graph?.bounds.width ?? 1200, height: graph?.bounds.height ?? 800 };
+  }
+  let maxX = 0;
+  let maxY = 0;
+  for (const node of graph.nodes) {
+    maxX = Math.max(maxX, node.x + node.width);
+    maxY = Math.max(maxY, node.y + node.height);
+  }
+  return {
+    width: Math.max(graph.bounds.width, maxX) + 160,
+    height: Math.max(graph.bounds.height, maxY) + 160,
+  };
+}
+
+function isTreeMode(): boolean {
+  return byId("workspace").classList.contains("tree-mode");
 }
 
 function showError(message: string) {
-  validity.textContent = "● Invalid";
+  validity.textContent = "无效";
   validity.classList.add("error");
   validity.title = message;
+  editorShell.classList.remove("fold-mode");
+  syncGutter();
+}
+
+function syncGutter() {
+  const gutter = byId("gutter");
+  const lineCount = Math.max(1, editor.value.split("\n").length);
+  gutter.textContent = Array.from({ length: lineCount }, (_, index) => String(index + 1)).join("\n");
+}
+
+function collectFoldRanges(text: string): FoldRange[] {
+  const lines = text.split("\n");
+  const stack: Array<{ start: number; opener: string }> = [];
+  const ranges: FoldRange[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const trimmed = lines[index].trimEnd();
+    const last = trimmed.slice(-1);
+    if (last === "{" || last === "[") {
+      stack.push({ start: index, opener: last });
+    }
+    const first = trimmed.trimStart().slice(0, 1);
+    if ((first === "}" || first === "]") && stack.length > 0) {
+      const opened = stack.pop();
+      if (opened && index > opened.start) {
+        ranges.push({ start: opened.start, end: index });
+      }
+    }
+  }
+  return ranges;
+}
+
+function isLineHidden(lineIndex: number): boolean {
+  return foldRanges.some((range) => collapsedFolds.has(range.start) && lineIndex > range.start && lineIndex < range.end);
+}
+
+function highlightJsonLine(line: string): string {
+  return escapeHtml(line)
+    .replace(/("(?:\\.|[^"\\])*")(\s*:)?/g, (_match, quoted: string, colon?: string) => {
+      if (colon) return `<span class="key">${quoted}</span>${colon}`;
+      return `<span class="string">${quoted}</span>`;
+    })
+    .replace(/\b(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g, `<span class="number">$1</span>`)
+    .replace(/\b(true|false)\b/g, `<span class="boolean $1">$1</span>`)
+    .replace(/\bnull\b/g, `<span class="null">null</span>`)
+    .replace(/([{}[\],])/g, `<span class="json-punct">$1</span>`);
+}
+
+function renderJsonEditor() {
+  const text = editor.value;
+  foldRanges = collectFoldRanges(text);
+  const validStarts = new Set(foldRanges.map((range) => range.start));
+  for (const start of [...collapsedFolds]) {
+    if (!validStarts.has(start)) collapsedFolds.delete(start);
+  }
+  const lines = text.split("\n");
+  jsonEditor.replaceChildren();
+  const fragment = document.createDocumentFragment();
+  for (let index = 0; index < lines.length; index += 1) {
+    if (isLineHidden(index)) continue;
+    const range = foldRanges.find((item) => item.start === index);
+    const collapsed = Boolean(range && collapsedFolds.has(index));
+    const row = document.createElement("div");
+    row.className = "json-line";
+    const number = document.createElement("span");
+    number.className = "json-line-number";
+    number.textContent = String(index + 1);
+    const fold = document.createElement("button");
+    fold.type = "button";
+    fold.className = `json-fold${range ? " has-children" : ""}`;
+    fold.textContent = range ? (collapsed ? "▸" : "▾") : "";
+    if (range) {
+      fold.addEventListener("click", () => {
+        if (collapsedFolds.has(index)) collapsedFolds.delete(index);
+        else collapsedFolds.add(index);
+        renderJsonEditor();
+      });
+    }
+    const code = document.createElement("span");
+    code.className = "json-code";
+    code.innerHTML = highlightJsonLine(lines[index] || " ");
+    if (collapsed && range) {
+      const preview = document.createElement("span");
+      preview.className = "json-collapsed";
+      preview.textContent = ` … ${range.end - range.start - 1} 行`;
+      code.append(preview);
+    }
+    row.append(number, fold, code);
+    fragment.append(row);
+  }
+  jsonEditor.append(fragment);
+}
+
+function setEditorText(value: string, parse = true) {
+  skipLiveParse = true;
+  editor.value = value;
+  skipLiveParse = false;
+  syncGutter();
+  if (parse) void loadContents(value, fileName);
+  else renderJsonEditor();
+}
+
+function escapeJsonText(value: string): string {
+  return JSON.stringify(value);
+}
+
+function unescapeJsonText(value: string): string {
+  const trimmed = value.trim();
+  if ((trimmed.startsWith("\"") && trimmed.endsWith("\"")) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return JSON.parse(trimmed.startsWith("'") ? `"${trimmed.slice(1, -1)}"` : trimmed);
+  }
+  return JSON.parse(`"${trimmed.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`);
+}
+
+function minifyEscapeJson(value: string): string {
+  try {
+    return JSON.stringify(JSON.stringify(JSON.parse(value)));
+  } catch {
+    return JSON.stringify(value.replace(/\s+/g, " ").trim());
+  }
+}
+
+function applyView(view: "graph" | "tree") {
+  const workspace = byId("workspace");
+  workspace.classList.toggle("tree-mode", view === "tree");
+  document.querySelectorAll<HTMLButtonElement>("[data-view]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.view === view);
+  });
+  if (view === "graph") centerView();
 }
 
 function showValid(documentState: LoadedDocument) {
-  validity.textContent = "● Valid";
+  validity.textContent = "有效";
   validity.classList.remove("error");
   validity.title = "";
   const size = (documentState.stats.bytes / 1024).toFixed(1);
-  stats.textContent = `${documentState.stats.nodes.toLocaleString()} nodes · depth ${documentState.stats.depth} · ${size} KB · parse ${documentState.stats.parseMs} ms`;
+  stats.textContent = `${documentState.stats.nodes.toLocaleString()} 节点 · 深度 ${documentState.stats.depth} · ${size} KB · ${documentState.stats.parseMs} ms`;
   if (documentState.graph.truncated) {
-    stats.textContent += " · graph truncated for responsiveness";
+    stats.textContent += " · 图形已截断";
   }
 }
 
@@ -149,7 +325,11 @@ async function loadContents(contents: string, name = fileName) {
     const loaded = await invoke<LoadedDocument>("load_document", { contents, fileName: name });
     editor.value = loaded.pretty;
     graph = loaded.graph;
+    treeData = loaded.tree;
     emptyState.classList.add("hidden");
+    editorShell.classList.add("fold-mode");
+    syncGutter();
+    renderJsonEditor();
     renderGraph();
     renderTree(loaded.tree);
     showValid(loaded);
@@ -163,10 +343,11 @@ function renderGraph() {
   if (!graph) return;
   nodesLayer.replaceChildren();
   const nodeLookup = new Map(graph.nodes.map((node) => [node.id, node]));
-  edges.setAttribute("width", String(graph.bounds.width));
-  edges.setAttribute("height", String(graph.bounds.height));
-  edges.style.width = `${graph.bounds.width}px`;
-  edges.style.height = `${graph.bounds.height}px`;
+  const stage = graphStageSize();
+  edges.setAttribute("width", String(stage.width));
+  edges.setAttribute("height", String(stage.height));
+  edges.style.width = `${stage.width}px`;
+  edges.style.height = `${stage.height}px`;
   edges.innerHTML = graph.edges
     .map((edge) => {
       const from = nodeLookup.get(edge.from);
@@ -194,39 +375,70 @@ function renderGraph() {
       .map((row) => `<div class="node-row"><span class="key">${escapeHtml(row.key)}</span><span class="${escapeHtml(row.kind)}">${escapeHtml(row.value)}</span></div>`)
       .join("");
     card.innerHTML = `<header><button class="collapse">${node.collapsed ? "+" : "–"}</button><span>${escapeHtml(title)}</span><span class="preview">${escapeHtml(node.preview)}</span></header>${rows}`;
-    card.addEventListener("click", () => selectNode(node.id));
+    card.addEventListener("click", (event) => {
+      if (panMoved) {
+        event.preventDefault();
+        return;
+      }
+      void selectNode(node.id);
+    });
     card.querySelector("button")?.addEventListener("click", async (event) => {
       event.stopPropagation();
+      if (panMoved) return;
       graph = await invoke<GraphPayload>("toggle_node", { nodeId: node.id });
       renderGraph();
     });
     fragment.append(card);
   }
   nodesLayer.append(fragment);
+  viewport.style.width = `${stage.width}px`;
+  viewport.style.height = `${stage.height}px`;
 }
 
 function renderTree(nodes: TreeNode[]) {
   treePane.replaceChildren();
   const fragment = document.createDocumentFragment();
-  for (const node of nodes) fragment.append(renderTreeNode(node));
+  for (const node of nodes) fragment.append(renderTreeNode(node, true));
   treePane.append(fragment);
 }
 
-function renderTreeNode(node: TreeNode): HTMLElement {
+function kindLabel(kind: ValueKind): string {
+  if (kind === "object") return "{}";
+  if (kind === "array") return "[]";
+  if (kind === "string") return "str";
+  if (kind === "number") return "num";
+  if (kind === "boolean") return "bool";
+  return "null";
+}
+
+function renderTreeNode(node: TreeNode, expanded: boolean): HTMLElement {
   const details = document.createElement("details");
-  details.open = node.children.length > 0 && node.children.length < 40;
+  details.open = expanded && node.children.length > 0 && node.children.length < 80;
   const summary = document.createElement("button");
-  summary.className = "tree-row";
-  summary.innerHTML = `<strong class="key">${escapeHtml(node.key ?? "$")}</strong> <span class="${node.kind}">${escapeHtml(node.preview)}</span>`;
-  summary.addEventListener("click", () => selectNode(node.id));
+  summary.type = "button";
+  summary.className = `tree-row${node.id === selectedId ? " active" : ""}`;
+  const hasChildren = node.children.length > 0;
+  const count = node.kind === "array" || node.kind === "object"
+    ? `<span class="tree-count">(${node.childCount})</span>`
+    : "";
+  const valueClass = node.kind === "boolean"
+    ? `boolean ${node.preview === "true" ? "true" : "false"}`
+    : node.kind;
+  const value = node.kind === "object" || node.kind === "array" ? "" : `<span class="${valueClass}">${escapeHtml(node.preview)}</span>`;
+  summary.innerHTML = `<span class="tree-toggle">${hasChildren ? "▾" : " "}</span><span class="kind ${node.kind}">${kindLabel(node.kind)}</span><strong class="key">${escapeHtml(node.key ?? "$")}</strong>${count}${value}`;
+  summary.addEventListener("click", (event) => {
+    event.preventDefault();
+    void selectNode(node.id);
+    if (hasChildren) details.open = !details.open;
+  });
   details.append(summary);
-  if (node.children.length) {
+  if (hasChildren) {
     const children = document.createElement("div");
     children.className = "tree-children";
-    for (const child of node.children) children.append(renderTreeNode(child));
+    for (const child of node.children) children.append(renderTreeNode(child, node.children.length < 12));
     if (node.truncatedChildren) {
       const note = document.createElement("small");
-      note.textContent = `${node.childCount - node.children.length} more children`;
+      note.textContent = `还有 ${node.childCount - node.children.length} 项`;
       children.append(note);
     }
     details.append(children);
@@ -240,6 +452,7 @@ async function selectNode(nodeId: number) {
   renderGraph();
   const detail = await invoke<{ path: string; json: string }>("node_detail", { nodeId });
   selectedPath = detail.path;
+  renderTree(treeData);
   openModal(detail.path, detail.json);
 }
 
@@ -309,21 +522,80 @@ async function saveFile() {
 }
 
 async function runTool(action: string) {
-  if (action === "format") editor.value = await invoke<string>("format_document");
-  if (action === "minify") editor.value = await invoke<string>("minify_document");
-  if (action === "repair") {
-    editor.value = editor.value.replace(/,\s*([}\]])/g, "$1");
-    await loadContents(editor.value, fileName);
+  if (action === "format") {
+    setEditorText(await invoke<string>("format_document"));
+    return;
   }
+  if (action === "minify") {
+    setEditorText(await invoke<string>("minify_document"));
+    editorShell.classList.remove("fold-mode");
+    syncGutter();
+    return;
+  }
+  if (action === "escape") {
+    setEditorText(escapeJsonText(editor.value), false);
+    editorShell.classList.remove("fold-mode");
+    return;
+  }
+  if (action === "unescape") {
+    try {
+      setEditorText(unescapeJsonText(editor.value));
+    } catch (error) {
+      showError(`反转义失败: ${String(error)}`);
+    }
+    return;
+  }
+  if (action === "minify-escape") {
+    setEditorText(minifyEscapeJson(editor.value), false);
+    editorShell.classList.remove("fold-mode");
+    return;
+  }
+  if (action === "repair") {
+    setEditorText(editor.value.replace(/,\s*([}\]])/g, "$1"));
+  }
+}
+
+async function generate(language: string) {
+  if (language === "schema") {
+    await openSchemaModal(true);
+    return;
+  }
+  const generated = await invoke<string>("generate_code", { language, rootName: "Root" });
+  openModal(language, generated);
 }
 
 async function convert(format: string) {
   openModal(format.toUpperCase(), await invoke<string>("convert_document", { format }));
 }
 
-async function generate(language: string) {
-  const generated = await invoke<string>("generate_code", { language, rootName: "Root" });
-  openModal(language, generated);
+async function openSchemaModal(generateFirst = false) {
+  schemaModal.classList.remove("hidden");
+  if (generateFirst || !schemaEditor.value.trim()) {
+    try {
+      schemaEditor.value = await invoke<string>("generate_schema");
+      schemaStatus.textContent = "已生成 Draft-07 Schema";
+    } catch (error) {
+      schemaStatus.textContent = String(error);
+    }
+  }
+}
+
+async function validateCurrentSchema() {
+  try {
+    const report = await invoke<ValidationReport>("validate_schema", { schema: schemaEditor.value });
+    if (report.valid) {
+      schemaResult.textContent = "验证通过，当前 JSON 符合 Schema。";
+      schemaStatus.textContent = "验证通过";
+      return;
+    }
+    schemaResult.textContent = report.issues
+      .map((issue) => `${issue.path}\n  ${issue.message}`)
+      .join("\n\n");
+    schemaStatus.textContent = `发现 ${report.issues.length} 处问题`;
+  } catch (error) {
+    schemaResult.textContent = String(error);
+    schemaStatus.textContent = "验证失败";
+  }
 }
 
 async function search(query: string) {
@@ -472,6 +744,10 @@ function bindInterface() {
   };
   byId("toggle-editor").onclick = () => byId("workspace").classList.toggle("editor-open");
   byId("toggle-query").onclick = () => byId("query-dock").classList.toggle("hidden");
+  byId("open-schema").onclick = () => void openSchemaModal(true);
+  byId("schema-modal-close").onclick = () => schemaModal.classList.add("hidden");
+  byId("schema-generate").onclick = () => void openSchemaModal(true);
+  byId("schema-validate").onclick = () => void validateCurrentSchema();
   byId("export-svg").onclick = exportSvg;
   byId("export-png").onclick = () => void exportPng();
   byId("modal-close").onclick = () => modal.classList.add("hidden");
@@ -492,11 +768,7 @@ function bindInterface() {
   };
 
   document.querySelectorAll<HTMLButtonElement>("[data-view]").forEach((button) => {
-    button.onclick = () => {
-      currentView = button.dataset.view as "graph" | "tree";
-      treePane.classList.toggle("open", currentView === "tree");
-      viewport.classList.toggle("hidden", currentView === "tree");
-    };
+    button.onclick = () => applyView(button.dataset.view as "graph" | "tree");
   });
   document.querySelectorAll<HTMLButtonElement>("[data-direction]").forEach((button) => {
     button.onclick = async () => {
@@ -514,17 +786,45 @@ function bindInterface() {
     button.onclick = () => void generate(button.dataset.generate!);
   });
 
-  editor.addEventListener("input", scheduleLiveParse);
+  editor.addEventListener("input", () => {
+    if (skipLiveParse) return;
+    editorShell.classList.remove("fold-mode");
+    syncGutter();
+    scheduleLiveParse();
+  });
+  editor.addEventListener("scroll", () => {
+    byId("gutter").scrollTop = editor.scrollTop;
+  });
+
+  const splitter = byId("splitter");
+  let resizing = false;
+  splitter.addEventListener("pointerdown", (event) => {
+    resizing = true;
+    splitter.setPointerCapture(event.pointerId);
+  });
+  window.addEventListener("pointermove", (event) => {
+    if (!resizing) return;
+    const workspace = byId("workspace");
+    const bounds = workspace.getBoundingClientRect();
+    const ratio = Math.min(0.78, Math.max(0.32, (event.clientX - bounds.left) / bounds.width));
+    workspace.style.gridTemplateColumns = `${ratio * 100}% 6px minmax(280px, 1fr)`;
+  });
+  window.addEventListener("pointerup", () => { resizing = false; });
   byId<HTMLInputElement>("search").addEventListener("input", (event) => {
     window.clearTimeout(searchTimer);
     searchTimer = window.setTimeout(() => void search((event.target as HTMLInputElement).value), 80);
   });
 
-  canvasPane.addEventListener("wheel", (event) => {
+  inspectorBody.addEventListener("wheel", (event) => {
+    if (isTreeMode()) return;
     event.preventDefault();
+    const bounds = inspectorBody.getBoundingClientRect();
+    const cursorX = event.clientX - bounds.left;
+    const cursorY = event.clientY - bounds.top;
     const nextScale = Math.min(2.4, Math.max(0.12, camera.scale * (event.deltaY < 0 ? 1.08 : 0.92)));
-    camera.x -= (event.offsetX - camera.x) * (nextScale / camera.scale - 1);
-    camera.y -= (event.offsetY - camera.y) * (nextScale / camera.scale - 1);
+    const zoomRatio = nextScale / camera.scale;
+    camera.x = cursorX - (cursorX - camera.x) * zoomRatio;
+    camera.y = cursorY - (cursorY - camera.y) * zoomRatio;
     camera.scale = nextScale;
     applyCamera();
   }, { passive: false });
@@ -532,28 +832,43 @@ function bindInterface() {
   let dragging = false;
   let dragX = 0;
   let dragY = 0;
-  canvasPane.addEventListener("pointerdown", (event) => {
-    if ((event.target as HTMLElement).closest(".node, .query-dock, button, input")) return;
+  inspectorBody.addEventListener("pointerdown", (event) => {
+    if (isTreeMode()) return;
+    if ((event.target as HTMLElement).closest("button, input, select, textarea")) return;
     dragging = true;
+    panMoved = false;
     dragX = event.clientX;
     dragY = event.clientY;
+    inspectorBody.setPointerCapture(event.pointerId);
   });
-  window.addEventListener("pointermove", (event) => {
+  inspectorBody.addEventListener("pointermove", (event) => {
     if (!dragging) return;
-    camera.x += event.clientX - dragX;
-    camera.y += event.clientY - dragY;
+    const deltaX = event.clientX - dragX;
+    const deltaY = event.clientY - dragY;
+    if (!panMoved && Math.hypot(deltaX, deltaY) < PAN_THRESHOLD) return;
+    panMoved = true;
+    camera.x += deltaX;
+    camera.y += deltaY;
     dragX = event.clientX;
     dragY = event.clientY;
     applyCamera();
   });
-  window.addEventListener("pointerup", () => { dragging = false; });
+  inspectorBody.addEventListener("pointerup", () => {
+    dragging = false;
+  });
+  inspectorBody.addEventListener("pointercancel", () => {
+    dragging = false;
+  });
 
   window.addEventListener("keydown", (event) => {
     if (event.ctrlKey && event.key.toLowerCase() === "o") { event.preventDefault(); void openFile(); }
     if (event.ctrlKey && event.key.toLowerCase() === "s") { event.preventDefault(); void saveFile(); }
     if (event.ctrlKey && event.key.toLowerCase() === "n") { event.preventDefault(); void loadContents(SAMPLE); }
     if (event.ctrlKey && event.key.toLowerCase() === "f") { event.preventDefault(); byId<HTMLInputElement>("search").focus(); }
-    if (event.key === "Escape") modal.classList.add("hidden");
+    if (event.key === "Escape") {
+      modal.classList.add("hidden");
+      schemaModal.classList.add("hidden");
+    }
   });
 
   const overlay = byId("drop-overlay");
@@ -579,4 +894,6 @@ function bindInterface() {
 bindTitlebar();
 bindInterface();
 applyCamera();
+applyView("tree");
+syncGutter();
 void loadContents(SAMPLE);

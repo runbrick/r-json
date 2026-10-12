@@ -1,71 +1,152 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 
 pub fn json_schema(value: &Value) -> Value {
-    schema_for(value, true)
-}
-
-fn schema_for(value: &Value, required: bool) -> Value {
-    let mut schema = match value {
-        Value::Object(object) => object_schema(object),
-        Value::Array(items) => array_schema(items),
-        Value::String(_) => typed("string"),
-        Value::Number(number) => typed(if number.is_i64() || number.is_u64() {
-            "integer"
-        } else {
-            "number"
-        }),
-        Value::Bool(_) => typed("boolean"),
-        Value::Null => typed("null"),
-    };
-    if let Some(object) = schema.as_object_mut() {
-        if !required {
-            object.insert("nullable".to_string(), Value::Bool(true));
+    let inferred = infer_schema(value);
+    let mut root = Map::new();
+    root.insert(
+        "$schema".to_string(),
+        Value::String("http://json-schema.org/draft-07/schema#".to_string()),
+    );
+    if let Some(object) = inferred.as_object() {
+        for (key, child) in object {
+            root.insert(key.clone(), child.clone());
         }
     }
-    schema
+    Value::Object(root)
+}
+
+fn infer_schema(value: &Value) -> Value {
+    match value {
+        Value::Null => json!({}),
+        Value::Bool(_) => json!({ "type": "boolean" }),
+        Value::Number(number) if number.is_i64() || number.is_u64() => json!({ "type": "integer" }),
+        Value::Number(_) => json!({ "type": "number" }),
+        Value::String(_) => json!({ "type": "string" }),
+        Value::Array(items) => array_schema(items),
+        Value::Object(object) => object_schema(object),
+    }
 }
 
 fn object_schema(object: &Map<String, Value>) -> Value {
     let mut properties = Map::new();
     let mut required = Vec::new();
-    for (key, value) in object {
-        properties.insert(key.clone(), schema_for(value, !value.is_null()));
-        if !value.is_null() {
+    for key in object.keys() {
+        let child_value = &object[key];
+        let child_schema = infer_schema(child_value);
+        let empty_schema = child_schema.as_object().is_some_and(Map::is_empty);
+        properties.insert(key.clone(), child_schema);
+        if !child_value.is_null() && !empty_schema {
             required.push(Value::String(key.clone()));
         }
     }
-    let mut schema = typed("object");
-    schema
-        .as_object_mut()
-        .unwrap()
-        .insert("properties".to_string(), Value::Object(properties));
-    schema
-        .as_object_mut()
-        .unwrap()
-        .insert("required".to_string(), Value::Array(required));
-    schema
-        .as_object_mut()
-        .unwrap()
-        .insert("additionalProperties".to_string(), Value::Bool(false));
+    let mut schema = json!({ "type": "object", "properties": properties });
+    if !required.is_empty() {
+        schema
+            .as_object_mut()
+            .expect("object schema")
+            .insert("required".to_string(), Value::Array(required));
+    }
     schema
 }
 
 fn array_schema(items: &[Value]) -> Value {
-    let item_schema = items.first().map(|item| schema_for(item, true)).unwrap_or_else(|| typed("object"));
-    let mut schema = typed("array");
+    let mut schema = json!({ "type": "array" });
+    let item_schema = items
+        .iter()
+        .map(infer_schema)
+        .reduce(|left, right| merge_schema(&left, &right))
+        .unwrap_or_else(|| json!({}));
     schema
         .as_object_mut()
-        .unwrap()
+        .expect("array schema")
         .insert("items".to_string(), item_schema);
     schema
 }
 
-fn typed(kind: &str) -> Value {
-    let mut object = Map::new();
-    object.insert("type".to_string(), Value::String(kind.to_string()));
-    Value::Object(object)
+fn merge_schema(left: &Value, right: &Value) -> Value {
+    if left == right {
+        return left.clone();
+    }
+    if is_empty_schema(left) || is_empty_schema(right) {
+        return json!({});
+    }
+    match (schema_type(left), schema_type(right)) {
+        (Some("object"), Some("object")) => merge_object_schemas(left, right),
+        (Some("array"), Some("array")) => {
+            let items = match (left.get("items"), right.get("items")) {
+                (Some(left_items), Some(right_items)) => merge_schema(left_items, right_items),
+                (Some(items), None) | (None, Some(items)) => items.clone(),
+                _ => json!({}),
+            };
+            json!({ "type": "array", "items": items })
+        }
+        (Some("integer"), Some("number")) | (Some("number"), Some("integer")) => {
+            json!({ "type": "number" })
+        }
+        _ => json!({}),
+    }
+}
+
+fn merge_object_schemas(left: &Value, right: &Value) -> Value {
+    let left_properties = left.get("properties").and_then(Value::as_object);
+    let right_properties = right.get("properties").and_then(Value::as_object);
+    let mut keys = BTreeSet::new();
+    if let Some(properties) = left_properties {
+        keys.extend(properties.keys().cloned());
+    }
+    if let Some(properties) = right_properties {
+        keys.extend(properties.keys().cloned());
+    }
+
+    let mut properties = Map::new();
+    for key in keys {
+        let left_child = left_properties.and_then(|properties| properties.get(&key));
+        let right_child = right_properties.and_then(|properties| properties.get(&key));
+        let merged = match (left_child, right_child) {
+            (Some(left_child), Some(right_child)) => merge_schema(left_child, right_child),
+            (Some(child), None) | (None, Some(child)) => child.clone(),
+            _ => json!({}),
+        };
+        properties.insert(key, merged);
+    }
+
+    let required = required_keys(left)
+        .intersection(&required_keys(right))
+        .cloned()
+        .map(Value::String)
+        .collect::<Vec<_>>();
+    let mut schema = json!({ "type": "object", "properties": properties });
+    if !required.is_empty() {
+        schema
+            .as_object_mut()
+            .expect("merged object schema")
+            .insert("required".to_string(), Value::Array(required));
+    }
+    schema
+}
+
+fn required_keys(schema: &Value) -> BTreeSet<String> {
+    schema
+        .get("required")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn schema_type(schema: &Value) -> Option<&str> {
+    schema.get("type").and_then(Value::as_str)
+}
+
+fn is_empty_schema(schema: &Value) -> bool {
+    schema.as_object().is_some_and(Map::is_empty)
 }
 
 pub fn generate(value: &Value, language: &str, root_name: &str) -> Result<String, String> {
