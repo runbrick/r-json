@@ -701,9 +701,8 @@ async function runTool(action: string) {
     return;
   }
   if (action === "minify") {
-    setEditorText(await invoke<string>("minify_document"));
+    setEditorText(await invoke<string>("minify_document"), false);
     editorShell.classList.remove("fold-mode");
-    syncGutter();
     return;
   }
   if (action === "escape") {
