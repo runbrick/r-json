@@ -128,20 +128,30 @@ const collapsedFolds = new Set<number>();
 let foldRanges: FoldRange[] = [];
 let skipLiveParse = false;
 
-const SAMPLE = `{
-  "project": "R JSON",
-  "inspiredBy": "JSON Crack",
-  "local": true,
-  "users": [
-    { "id": 1, "name": "Ada", "active": true, "score": 98.5 },
-    { "id": 2, "name": "Lin", "active": false, "score": null }
-  ],
-  "features": {
-    "graph": true,
-    "search": "parallel",
-    "formats": ["json", "yaml", "xml", "csv", "toml"]
-  }
-}`;
+function resetWorkspace() {
+  fileName = "Untitled.json";
+  fileLabel.textContent = fileName;
+  document.title = "R JSON";
+  editor.value = "";
+  graph = null;
+  treeData = [];
+  selectedId = null;
+  selectedPath = "$";
+  hideSearchResults();
+  nodesLayer.replaceChildren();
+  edges.innerHTML = "";
+  treePane.replaceChildren();
+  emptyState.classList.remove("hidden");
+  editorShell.classList.remove("fold-mode");
+  collapsedFolds.clear();
+  foldRanges = [];
+  validity.textContent = "";
+  validity.classList.remove("error");
+  validity.title = "";
+  stats.textContent = "未加载";
+  syncGutter();
+  renderJsonEditor();
+}
 
 function byId<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -969,7 +979,7 @@ function bindTitlebar() {
 }
 
 function bindInterface() {
-  byId("new-file").onclick = () => void loadContents(SAMPLE, "Untitled.json");
+  byId("new-file").onclick = resetWorkspace;
   byId("open-file").onclick = () => void openFile();
   byId("save-file").onclick = () => void saveFile();
   byId("import-url").onclick = async () => loadContents(await navigator.clipboard.readText(), "Clipboard.json");
@@ -1156,7 +1166,7 @@ function bindInterface() {
   window.addEventListener("keydown", (event) => {
     if (event.ctrlKey && event.key.toLowerCase() === "o") { event.preventDefault(); void openFile(); }
     if (event.ctrlKey && event.key.toLowerCase() === "s") { event.preventDefault(); void saveFile(); }
-    if (event.ctrlKey && event.key.toLowerCase() === "n") { event.preventDefault(); void loadContents(SAMPLE); }
+    if (event.ctrlKey && event.key.toLowerCase() === "n") { event.preventDefault(); resetWorkspace(); }
     if (event.ctrlKey && event.key.toLowerCase() === "f") { event.preventDefault(); byId<HTMLInputElement>("search").focus(); }
     if (event.key === "Escape") {
       modal.classList.add("hidden");
@@ -1189,4 +1199,4 @@ bindInterface();
 applyCamera();
 applyView("tree");
 syncGutter();
-void loadContents(SAMPLE);
+void resetWorkspace();
