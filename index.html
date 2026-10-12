@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>R JSON</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app" class="app">
+      <header class="titlebar" data-tauri-drag-region>
+        <div class="titlebar-left" data-tauri-drag-region>
+          <div class="brand" data-tauri-drag-region><span class="mark"></span></div>
+          <nav class="menubar" id="menubar">
+            <div class="menu">
+              <button class="menu-trigger" type="button">File</button>
+              <div class="menu-panel">
+                <button id="new-file">New <kbd>Ctrl+N</kbd></button>
+                <button id="open-file">Open <kbd>Ctrl+O</kbd></button>
+                <button id="save-file">Save <kbd>Ctrl+S</kbd></button>
+                <div class="divider"></div>
+                <button id="import-url">Import from clipboard</button>
+              </div>
+            </div>
+            <div class="menu">
+              <button class="menu-trigger" type="button">View</button>
+              <div class="menu-panel">
+                <button data-view="graph">Graph</button>
+                <button data-view="tree">Tree</button>
+                <div class="divider"></div>
+                <button data-direction="RIGHT">Left to right</button>
+                <button data-direction="LEFT">Right to left</button>
+                <button data-direction="DOWN">Top to bottom</button>
+                <button data-direction="UP">Bottom to top</button>
+                <div class="divider"></div>
+                <button id="center-view">Center view</button>
+                <button id="expand-all">Expand all</button>
+                <button id="collapse-all">Collapse all</button>
+                <div class="divider"></div>
+                <button id="theme-toggle">Toggle theme</button>
+                <button id="fullscreen">Fullscreen</button>
+              </div>
+            </div>
+            <div class="menu">
+              <button class="menu-trigger" type="button">Tools</button>
+              <div class="menu-panel">
+                <button data-tool="format">Format JSON</button>
+                <button data-tool="minify">Minify JSON</button>
+                <button data-tool="repair">Repair JSON</button>
+                <div class="divider"></div>
+                <button data-convert="json">Convert to JSON</button>
+                <button data-convert="yaml">Convert to YAML</button>
+                <button data-convert="xml">Convert to XML</button>
+                <button data-convert="csv">Convert to CSV</button>
+                <button data-convert="toml">Convert to TOML</button>
+                <div class="divider"></div>
+                <button data-generate="typescript">Generate TypeScript</button>
+                <button data-generate="rust">Generate Rust</button>
+                <button data-generate="go">Generate Go</button>
+                <button data-generate="kotlin">Generate Kotlin</button>
+                <button data-generate="schema">Generate JSON Schema</button>
+              </div>
+            </div>
+          </nav>
+        </div>
+        <div class="titlebar-center" data-tauri-drag-region>
+          <div class="search-wrap">
+            <input id="search" placeholder="Search nodes, keys, values…" />
+            <div id="search-results" class="search-results hidden"></div>
+          </div>
+        </div>
+        <div class="window-controls">
+          <button id="window-minimize" class="window-button" type="button" title="Minimize" aria-label="Minimize">
+            <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5h8" /></svg>
+          </button>
+          <button id="window-maximize" class="window-button" type="button" title="Maximize" aria-label="Maximize">
+            <svg id="maximize-icon" viewBox="0 0 10 10" aria-hidden="true"><rect x="1.5" y="1.5" width="7" height="7" /></svg>
+            <svg id="restore-icon" class="hidden" viewBox="0 0 10 10" aria-hidden="true">
+              <path d="M3 1.5h5.5v5.5M1.5 3.5h5.5v5.5H1.5z" />
+            </svg>
+          </button>
+          <button id="window-close" class="window-button window-close" type="button" title="Close" aria-label="Close">
+            <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7" /></svg>
+          </button>
+        </div>
+      </header>
+
+      <main id="workspace" class="workspace editor-open">
+        <section class="editor-pane">
+          <div class="pane-title">
+            <span id="file-label">Untitled.json</span>
+            <span id="editor-state">Live</span>
+          </div>
+          <textarea id="editor" class="editor" spellcheck="false"></textarea>
+        </section>
+        <section class="canvas-pane" id="canvas-pane">
+          <div id="empty" class="empty">
+            <div>
+              <h1>JSON Crack</h1>
+              <p class="hint">Drop a JSON, YAML, XML, CSV, or TOML file, or press <kbd>Ctrl+O</kbd>.</p>
+            </div>
+          </div>
+          <div id="viewport" class="viewport">
+            <svg id="edges" class="edges"></svg>
+            <div id="nodes"></div>
+          </div>
+          <div id="tree" class="tree-pane"></div>
+          <section id="query-dock" class="query-dock hidden">
+            <div class="query-bar">
+              <select id="query-mode">
+                <option value="jq">jq</option>
+                <option value="path">JSON Path</option>
+                <option value="jmes">JMESPath</option>
+              </select>
+              <input id="query-input" placeholder=".users[] | select(.active)" />
+              <button id="run-query" class="primary">Run</button>
+            </div>
+            <pre id="query-output"></pre>
+          </section>
+        </section>
+      </main>
+
+      <footer class="statusbar">
+        <div class="status-side">
+          <button id="toggle-editor" class="status-button" title="Toggle editor">◧</button>
+          <span id="validity" class="status-button">● Valid</span>
+          <button id="toggle-query" class="status-button">jq / JSON Path</button>
+        </div>
+        <div class="status-side">
+          <span id="stats">No document</span>
+          <button id="export-svg" class="status-button">Export SVG</button>
+          <button id="export-png" class="status-button">Export PNG</button>
+        </div>
+      </footer>
+    </div>
+    <div id="drop-overlay" class="drop-overlay">Drop to visualize</div>
+    <div id="modal" class="modal-backdrop hidden">
+      <section class="modal">
+        <header><strong id="modal-title">Result</strong><button id="modal-close">✕</button></header>
+        <pre id="modal-body"></pre>
+        <footer>
+          <span id="modal-status" class="muted"></span>
+          <div class="cluster">
+            <button id="copy-jsonpath" class="status-button">Copy JSONPath</button>
+            <button id="copy-jmespath" class="status-button">Copy JMESPath</button>
+            <button id="copy-result" class="primary">Copy JSON</button>
+          </div>
+        </footer>
+      </section>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
