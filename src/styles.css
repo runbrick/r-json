@@ -163,13 +163,13 @@ button:disabled { opacity: 0.4; cursor: default; }
   display: flex;
   align-items: center;
   gap: 2px;
-  height: 32px;
+  height: 36px;
   padding: 0 8px;
   border-bottom: 1px solid var(--line);
   background: var(--toolbar);
 }
 .cmd {
-  height: 24px;
+  height: 26px;
   padding: 0 10px;
   border-radius: 4px;
   color: var(--muted);
@@ -340,7 +340,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .workspace:not(.editor-open) .editor-pane,
 .workspace:not(.editor-open) .splitter { display: none; }
 .editor-pane, .canvas-pane { min-width: 0; min-height: 0; background: var(--bg); }
-.editor-pane { display: grid; grid-template-rows: 32px minmax(0, 1fr); }
+.editor-pane { display: grid; grid-template-rows: 36px minmax(0, 1fr); }
 .editor-shell {
   position: relative;
   height: 100%;
