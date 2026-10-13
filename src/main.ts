@@ -1,3 +1,30 @@
+import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { json } from "@codemirror/lang-json";
+import {
+  bracketMatching,
+  foldGutter,
+  foldKeymap,
+  indentOnInput,
+  indentUnit,
+  syntaxHighlighting,
+  HighlightStyle,
+} from "@codemirror/language";
+import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
+import { Compartment, EditorState, RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
+import { oneDark } from "@codemirror/theme-one-dark";
+import {
+  Decoration,
+  type DecorationSet,
+  drawSelection,
+  dropCursor,
+  EditorView,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  keymap,
+  lineNumbers,
+} from "@codemirror/view";
+import { tags } from "@lezer/highlight";
+import { indentationMarkers } from "@replit/codemirror-indentation-markers";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -87,11 +114,6 @@ interface ValidationReport {
   issues: ValidationIssue[];
 }
 
-interface FoldRange {
-  start: number;
-  end: number;
-}
-
 interface NodeDetail {
   id: number;
   path: string;
@@ -110,9 +132,7 @@ interface SourceRange {
   endLine: number;
 }
 
-const editor = document.querySelector<HTMLTextAreaElement>("#editor")!;
 const jsonEditor = document.querySelector<HTMLElement>("#json-editor")!;
-const editorShell = document.querySelector<HTMLElement>("#editor-shell")!;
 const schemaModal = document.querySelector<HTMLElement>("#schema-modal")!;
 const schemaEditor = document.querySelector<HTMLTextAreaElement>("#schema-editor")!;
 const schemaResult = document.querySelector<HTMLElement>("#schema-result")!;
@@ -141,18 +161,86 @@ let searchHits: SearchHit[] = [];
 let searchActiveIndex = -1;
 let searchRequestId = 0;
 let selectedPath = "$";
-let selectedSourceRange: SourceRange | null = null;
 let treeData: TreeNode[] = [];
 let pathMode: "jmes" | "json" = "jmes";
-const collapsedFolds = new Set<number>();
-let foldRanges: FoldRange[] = [];
 let skipLiveParse = false;
 let graphReady = false;
-let jsonEditorLines: string[] = [];
-let jsonEditorVisibleIndexes: number[] = [];
-let jsonEditorScrollBound = false;
-const JSON_LINE_HEIGHT = 20;
-const JSON_EDITOR_OVERSCAN = 24;
+let sourceEditor: EditorView | null = null;
+let selectingFromSource = false;
+const sourceTheme = new Compartment();
+const setSourceRange = StateEffect.define<SourceRange | null>();
+const sourceWrapMark = Decoration.mark({ class: "cm-source-wrap" });
+const sourceRangeField = StateField.define<DecorationSet>({
+  create() {
+    return Decoration.none;
+  },
+  update(value, transaction) {
+    let decorations = value.map(transaction.changes);
+    for (const effect of transaction.effects) {
+      if (!effect.is(setSourceRange)) continue;
+      const range = effect.value;
+      if (!range) {
+        decorations = Decoration.none;
+        continue;
+      }
+      const builder = new RangeSetBuilder<Decoration>();
+      const document = transaction.state.doc;
+      const startLine = Math.max(1, range.startLine + 1);
+      const endLine = Math.min(document.lines, range.endLine + 1);
+      const from = document.line(startLine).from;
+      const to = document.line(endLine).to;
+      if (to > from) builder.add(from, to, sourceWrapMark);
+      decorations = builder.finish();
+    }
+    return decorations;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+const jsonHighlightStyle = HighlightStyle.define([
+  { tag: tags.propertyName, color: "var(--key)" },
+  { tag: tags.string, color: "var(--string)" },
+  { tag: tags.number, color: "var(--number)" },
+  { tag: tags.bool, color: "var(--true)" },
+  { tag: tags.null, color: "var(--null)" },
+  { tag: tags.punctuation, color: "var(--muted)" },
+  { tag: tags.bracket, color: "var(--muted)" },
+  { tag: tags.squareBracket, color: "var(--muted)" },
+  { tag: tags.brace, color: "var(--muted)" },
+]);
+const sourceEditorTheme = EditorView.theme({
+  "&": {
+    height: "100%",
+    backgroundColor: "var(--bg)",
+    color: "var(--text)",
+    fontFamily: "var(--mono)",
+    fontSize: "13px",
+  },
+  ".cm-scroller": {
+    fontFamily: "var(--mono)",
+    lineHeight: "20px",
+    overflow: "auto",
+  },
+  ".cm-content": {
+    caretColor: "var(--text)",
+    padding: "8px 0 16px",
+  },
+  ".cm-gutters": {
+    backgroundColor: "var(--gutter)",
+    color: "var(--faint)",
+    borderRight: "1px solid var(--line)",
+  },
+  ".cm-activeLine": { backgroundColor: "var(--hover)" },
+  ".cm-activeLineGutter": { backgroundColor: "var(--hover)" },
+  ".cm-foldGutter .cm-gutterElement": {
+    color: "var(--accent)",
+    cursor: "pointer",
+  },
+  ".cm-source-wrap": {
+    backgroundColor: "var(--selected)",
+    borderRadius: "6px",
+    outline: "1px solid color-mix(in srgb, var(--accent) 32%, transparent)",
+  },
+});
 
 function yieldToUi(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -162,27 +250,21 @@ function resetWorkspace() {
   fileName = "Untitled.json";
   fileLabel.textContent = fileName;
   document.title = "R JSON";
-  editor.value = "";
   graph = null;
   treeData = [];
   graphReady = false;
   selectedId = null;
   selectedPath = "$";
-  selectedSourceRange = null;
   hideSearchResults();
   nodesLayer.replaceChildren();
   edges.innerHTML = "";
   treePane.replaceChildren();
   emptyState.classList.remove("hidden");
-  editorShell.classList.remove("fold-mode");
-  collapsedFolds.clear();
-  foldRanges = [];
   validity.textContent = "";
   validity.classList.remove("error");
   validity.title = "";
   stats.textContent = "未加载";
-  syncGutter();
-  renderJsonEditor();
+  setEditorText("", false);
 }
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -223,80 +305,18 @@ function showError(message: string) {
   validity.textContent = "无效";
   validity.classList.add("error");
   validity.title = message;
-  editorShell.classList.remove("fold-mode");
-  syncGutter();
 }
 
-function syncGutter() {
-  const gutter = byId("gutter");
-  const lineCount = Math.max(1, editor.value.split("\n").length);
-  gutter.textContent = Array.from({ length: lineCount }, (_, index) => String(index + 1)).join("\n");
+function currentEditorText(): string {
+  return sourceEditor?.state.doc.toString() ?? "";
 }
 
-function collectFoldRanges(text: string): FoldRange[] {
-  const lines = text.split("\n");
-  const stack: Array<{ start: number; opener: string }> = [];
-  const ranges: FoldRange[] = [];
-  for (let index = 0; index < lines.length; index += 1) {
-    const trimmed = lines[index].trimEnd();
-    const last = trimmed.slice(-1);
-    if (last === "{" || last === "[") {
-      stack.push({ start: index, opener: last });
-    }
-    const first = trimmed.trimStart().slice(0, 1);
-    if ((first === "}" || first === "]") && stack.length > 0) {
-      const opened = stack.pop();
-      if (opened && index > opened.start) {
-        ranges.push({ start: opened.start, end: index });
-      }
-    }
-  }
-  return ranges;
+function isDarkTheme(): boolean {
+  return document.documentElement.dataset.theme === "dark";
 }
 
-function sourceRangeClass(lineIndex: number): string {
-  if (!selectedSourceRange) return "";
-  const start = selectedSourceRange.startLine;
-  const end = selectedSourceRange.endLine;
-  if (lineIndex < start || lineIndex > end) return "";
-  if (start === end) return " source-wrap source-wrap-single";
-  if (lineIndex === start) return " source-wrap source-wrap-start";
-  if (lineIndex === end) return " source-wrap source-wrap-end";
-  return " source-wrap source-wrap-mid";
-}
-
-function revealSourceRange(range: SourceRange) {
-  for (const fold of foldRanges) {
-    const overlaps = fold.start <= range.endLine && fold.end >= range.startLine;
-    if (overlaps) collapsedFolds.delete(fold.start);
-  }
-}
-
-function bindJsonEditorScroll() {
-  if (jsonEditorScrollBound) return;
-  jsonEditorScrollBound = true;
-  jsonEditor.addEventListener("scroll", () => {
-    renderJsonEditorWindow();
-  });
-}
-
-function hiddenLineSet(lineCount: number): Set<number> {
-  const hidden = new Set<number>();
-  for (const range of foldRanges) {
-    if (!collapsedFolds.has(range.start)) continue;
-    const last = Math.min(range.end, lineCount - 1);
-    for (let index = range.start + 1; index < last; index += 1) hidden.add(index);
-  }
-  return hidden;
-}
-
-function visibleLineIndexes(lineCount: number): number[] {
-  const hidden = hiddenLineSet(lineCount);
-  const indexes: number[] = [];
-  for (let index = 0; index < lineCount; index += 1) {
-    if (!hidden.has(index)) indexes.push(index);
-  }
-  return indexes;
+function sourceThemeExtensions() {
+  return isDarkTheme() ? [oneDark] : [];
 }
 
 function sourceRangeFromDetail(detail: NodeDetail): SourceRange {
@@ -307,13 +327,14 @@ function sourceRangeFromDetail(detail: NodeDetail): SourceRange {
     };
   }
   if (detail.key) {
-    const located = locateKeyRange(detail.key, editor.value);
+    const located = locateKeyRange(detail.key, currentEditorText());
     if (located) return located;
   }
   return { startLine: 0, endLine: 0 };
 }
 
 function locateKeyRange(key: string, text: string): SourceRange | null {
+  if (!key) return null;
   const lines = text.split("\n");
   const needle = `"${key}"`;
   for (let index = 0; index < lines.length; index += 1) {
@@ -335,108 +356,100 @@ function locateKeyRange(key: string, text: string): SourceRange | null {
   return null;
 }
 
-function scrollSourceRangeIntoView() {
-  if (!selectedSourceRange) return;
-  const target = jsonEditorVisibleIndexes.findIndex((lineIndex) => lineIndex >= selectedSourceRange!.startLine);
-  if (target < 0) return;
-  const maxScroll = Math.max(0, jsonEditorVisibleIndexes.length * JSON_LINE_HEIGHT - jsonEditor.clientHeight);
-  jsonEditor.scrollTop = Math.min(maxScroll, Math.max(0, target * JSON_LINE_HEIGHT - jsonEditor.clientHeight / 3));
+function applySourceRange(range: SourceRange | null, scroll = false) {
+  if (!sourceEditor) return;
+  sourceEditor.dispatch({
+    effects: setSourceRange.of(range),
+  });
+  if (!range || !scroll) return;
+  const document = sourceEditor.state.doc;
+  const startLine = Math.max(1, range.startLine + 1);
+  const endLine = Math.min(document.lines, range.endLine + 1);
+  const from = document.line(startLine).from;
+  const to = document.line(endLine).to;
+  sourceEditor.dispatch({
+    selection: { anchor: from, head: to },
+    scrollIntoView: true,
+  });
 }
 
-function highlightJsonLine(line: string): string {
-  return escapeHtml(line)
-    .replace(/("(?:\\.|[^"\\])*")(\s*:)?/g, (_match, quoted: string, colon?: string) => {
-      if (colon) return `<span class="key">${quoted}</span>${colon}`;
-      return `<span class="string">${quoted}</span>`;
-    })
-    .replace(/\b(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g, `<span class="number">$1</span>`)
-    .replace(/\b(true|false)\b/g, `<span class="boolean $1">$1</span>`)
-    .replace(/\bnull\b/g, `<span class="null">null</span>`)
-    .replace(/([{}[\],])/g, `<span class="json-punct">$1</span>`);
+function scheduleLiveParse() {
+  window.clearTimeout(liveTimer);
+  const text = currentEditorText();
+  const delay = text.length > 80_000 ? 600 : 180;
+  liveTimer = window.setTimeout(() => {
+    void loadContents(text, fileName);
+  }, delay);
 }
 
-function renderJsonEditor(scrollToSelection = false) {
-  bindJsonEditorScroll();
-  const text = editor.value;
-  jsonEditorLines = text.split("\n");
-  editorShell.classList.add("fold-mode");
-  foldRanges = collectFoldRanges(text);
-  const validStarts = new Set(foldRanges.map((range) => range.start));
-  for (const start of [...collapsedFolds]) {
-    if (!validStarts.has(start)) collapsedFolds.delete(start);
+async function selectFromSourceLine(lineNumber: number) {
+  if (selectingFromSource) return;
+  selectingFromSource = true;
+  try {
+    const detail = await invoke<NodeDetail>("node_at_line", { line: lineNumber });
+    await selectNode(detail.id, detail.path, false);
+  } catch {
+    // Keep the current selection if this line does not map to a node.
+  } finally {
+    selectingFromSource = false;
   }
-  if (selectedSourceRange) revealSourceRange(selectedSourceRange);
-  jsonEditorVisibleIndexes = visibleLineIndexes(jsonEditorLines.length);
-  if (!jsonEditor.querySelector(".json-editor-window") || !jsonEditor.querySelector(".json-editor-sizer")) {
-    jsonEditor.replaceChildren();
-    const sizer = document.createElement("div");
-    sizer.className = "json-editor-sizer";
-    const window = document.createElement("div");
-    window.className = "json-editor-window";
-    jsonEditor.append(sizer, window);
-  }
-  const sizer = jsonEditor.querySelector<HTMLElement>(".json-editor-sizer")!;
-  sizer.style.height = `${Math.max(1, jsonEditorVisibleIndexes.length) * JSON_LINE_HEIGHT}px`;
-  if (scrollToSelection) scrollSourceRangeIntoView();
-  renderJsonEditorWindow();
 }
 
-function renderJsonEditorWindow() {
-  const window = jsonEditor.querySelector<HTMLElement>(".json-editor-window");
-  const sizer = jsonEditor.querySelector<HTMLElement>(".json-editor-sizer");
-  if (!window || !sizer) return;
-  const total = jsonEditorVisibleIndexes.length;
-  const viewportCount = Math.max(1, Math.ceil(jsonEditor.clientHeight / JSON_LINE_HEIGHT) + JSON_EDITOR_OVERSCAN * 2);
-  const first = Math.max(0, Math.floor(jsonEditor.scrollTop / JSON_LINE_HEIGHT) - JSON_EDITOR_OVERSCAN);
-  const last = Math.min(total, first + viewportCount);
-  window.style.top = `${first * JSON_LINE_HEIGHT}px`;
-  window.replaceChildren();
-  const fragment = document.createDocumentFragment();
-  for (let visibleIndex = first; visibleIndex < last; visibleIndex += 1) {
-    const index = jsonEditorVisibleIndexes[visibleIndex];
-    const range = foldRanges.find((item) => item.start === index);
-    const collapsed = Boolean(range && collapsedFolds.has(index));
-    const row = document.createElement("div");
-    row.className = `json-line${sourceRangeClass(index)}`;
-    row.dataset.line = String(index);
-    const number = document.createElement("span");
-    number.className = "json-line-number";
-    number.textContent = String(index + 1);
-    const fold = document.createElement("button");
-    fold.type = "button";
-    fold.className = `json-fold${range ? " has-children" : ""}`;
-    fold.textContent = range ? (collapsed ? "▸" : "▾") : "";
-    if (range) {
-      fold.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (collapsedFolds.has(index)) collapsedFolds.delete(index);
-        else collapsedFolds.add(index);
-        renderJsonEditor();
-      });
-    }
-    const code = document.createElement("span");
-    code.className = "json-code";
-    code.innerHTML = highlightJsonLine(jsonEditorLines[index] || " ");
-    if (collapsed && range) {
-      const preview = document.createElement("span");
-      preview.className = "json-collapsed";
-      preview.textContent = ` … ${range.end - range.start - 1} 行`;
-      code.append(preview);
-    }
-    row.append(number, fold, code);
-    fragment.append(row);
-  }
-  window.append(fragment);
+function createSourceEditor() {
+  if (sourceEditor) return sourceEditor;
+  sourceEditor = new EditorView({
+    parent: jsonEditor,
+    state: EditorState.create({
+      doc: "",
+      extensions: [
+        lineNumbers(),
+        highlightActiveLineGutter(),
+        highlightActiveLine(),
+        history(),
+        drawSelection(),
+        dropCursor(),
+        indentOnInput(),
+        bracketMatching(),
+        foldGutter(),
+        json(),
+        indentUnit.of("  "),
+        syntaxHighlighting(jsonHighlightStyle),
+        highlightSelectionMatches(),
+        indentationMarkers({
+          highlightActiveBlock: true,
+          hideFirstIndent: true,
+          colors: {
+            light: "#d0d7de",
+            dark: "#3c3c3c",
+            activeLight: "#1677ff",
+            activeDark: "#4fc1ff",
+          },
+        }),
+        sourceRangeField,
+        sourceEditorTheme,
+        sourceTheme.of(sourceThemeExtensions()),
+        keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap, ...searchKeymap, indentWithTab]),
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged && !skipLiveParse) scheduleLiveParse();
+          if (!update.selectionSet || skipLiveParse || selectingFromSource) return;
+          const line = update.state.doc.lineAt(update.state.selection.main.head);
+          void selectFromSourceLine(line.number);
+        }),
+      ],
+    }),
+  });
+  return sourceEditor;
 }
 
 function setEditorText(value: string, parse = true) {
+  const view = createSourceEditor();
   skipLiveParse = true;
-  editor.value = value;
+  view.dispatch({
+    changes: { from: 0, to: view.state.doc.length, insert: value },
+  });
   skipLiveParse = false;
-  syncGutter();
+  applySourceRange(null);
   if (parse) void loadContents(value, fileName);
-  else renderJsonEditor();
 }
 
 function escapeJsonText(value: string): string {
@@ -500,18 +513,16 @@ async function loadContents(contents: string, name = fileName) {
   stats.textContent = "正在加载…";
   try {
     const loaded = await invoke<LoadedDocument>("load_document", { contents, fileName: name });
-    editor.value = loaded.pretty;
+    skipLiveParse = true;
+    setEditorText(loaded.pretty, false);
+    skipLiveParse = false;
     graph = loaded.graph;
     graphReady = false;
     treeData = loaded.tree;
     selectedId = null;
     selectedPath = "$";
-    selectedSourceRange = null;
+    applySourceRange(null);
     emptyState.classList.add("hidden");
-    collapsedFolds.clear();
-    editorShell.classList.add("fold-mode");
-    await yieldToUi();
-    renderJsonEditor();
     await yieldToUi();
     renderTree(loaded.tree);
     showValid(loaded);
@@ -710,7 +721,7 @@ async function expandTreeChildren(node: TreeNode, container: HTMLElement, expand
   container.replaceChildren(fragment);
 }
 
-async function selectNode(nodeId: number, path?: string) {
+async function selectNode(nodeId: number, path?: string, scrollSource = true) {
   selectedId = nodeId;
   if (path) selectedPath = path;
   if (graphReady) renderGraph();
@@ -728,12 +739,12 @@ async function selectNode(nodeId: number, path?: string) {
   try {
     const detail = await invoke<NodeDetail>("node_detail", { nodeId });
     selectedPath = detail.path;
-    selectedSourceRange = sourceRangeFromDetail(detail);
+    applySourceRange(sourceRangeFromDetail(detail), scrollSource && !selectingFromSource);
   } catch {
     selectedPath = path ?? selectedPath;
-    selectedSourceRange = path ? locateKeyRange(path.split(".").pop()?.replace(/\[.*$/, "") ?? "", editor.value) : null;
+    const fallbackKey = path?.split(".").pop()?.replace(/\[.*$/, "") ?? "";
+    applySourceRange(path ? locateKeyRange(fallbackKey, currentEditorText()) : null, scrollSource && !selectingFromSource);
   }
-  renderJsonEditor(true);
 }
 
 function treeContains(nodes: TreeNode[], nodeId: number): boolean {
@@ -883,14 +894,6 @@ function escapeHtml(value: string): string {
   }[character]!));
 }
 
-function scheduleLiveParse() {
-  window.clearTimeout(liveTimer);
-  const delay = editor.value.length > 80_000 ? 600 : 180;
-  liveTimer = window.setTimeout(() => {
-    void loadContents(editor.value, fileName);
-  }, delay);
-}
-
 async function openFile() {
   const picker = document.createElement("input");
   picker.type = "file";
@@ -906,39 +909,37 @@ async function openFile() {
 async function saveFile() {
   const path = await save({ defaultPath: fileName, filters: [{ name: "Data", extensions: ["json", "yaml", "xml", "csv", "toml", "txt"] }] });
   if (!path) return;
-  await writeTextFile(path, editor.value);
+  await writeTextFile(path, currentEditorText());
 }
 
 async function runTool(action: string) {
+  const source = currentEditorText();
   if (action === "format") {
     setEditorText(await invoke<string>("format_document"));
     return;
   }
   if (action === "minify") {
     setEditorText(await invoke<string>("minify_document"), false);
-    editorShell.classList.remove("fold-mode");
     return;
   }
   if (action === "escape") {
-    setEditorText(escapeJsonText(editor.value), false);
-    editorShell.classList.remove("fold-mode");
+    setEditorText(escapeJsonText(source), false);
     return;
   }
   if (action === "unescape") {
     try {
-      setEditorText(unescapeJsonText(editor.value));
+      setEditorText(unescapeJsonText(source));
     } catch (error) {
       showError(`反转义失败: ${String(error)}`);
     }
     return;
   }
   if (action === "minify-escape") {
-    setEditorText(minifyEscapeJson(editor.value), false);
-    editorShell.classList.remove("fold-mode");
+    setEditorText(minifyEscapeJson(source), false);
     return;
   }
   if (action === "repair") {
-    setEditorText(editor.value.replace(/,\s*([}\]])/g, "$1"));
+    setEditorText(source.replace(/,\s*([}\]])/g, "$1"));
   }
 }
 
@@ -1211,6 +1212,9 @@ function bindInterface() {
   themeToggle.onclick = () => {
     const root = document.documentElement;
     root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light";
+    sourceEditor?.dispatch({
+      effects: sourceTheme.reconfigure(sourceThemeExtensions()),
+    });
     syncThemeToggle();
   };
   syncThemeToggle();
@@ -1286,16 +1290,6 @@ function bindInterface() {
   });
   document.querySelectorAll<HTMLButtonElement>("[data-generate]").forEach((button) => {
     button.onclick = () => void generate(button.dataset.generate!);
-  });
-
-  editor.addEventListener("input", () => {
-    if (skipLiveParse) return;
-    editorShell.classList.remove("fold-mode");
-    syncGutter();
-    scheduleLiveParse();
-  });
-  editor.addEventListener("scroll", () => {
-    byId("gutter").scrollTop = editor.scrollTop;
   });
 
   const splitter = byId("splitter");
@@ -1421,5 +1415,5 @@ bindTitlebar();
 bindInterface();
 applyCamera();
 applyView("tree");
-syncGutter();
+createSourceEditor();
 void resetWorkspace();

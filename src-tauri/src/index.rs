@@ -66,6 +66,35 @@ impl DocumentIndex {
         )
     }
 
+    pub fn record_at_line(&self, line: u32) -> Option<&Record> {
+        let line_index = line.saturating_sub(1) as usize;
+        let line_start = *self.line_starts.get(line_index)?;
+        let line_end = self
+            .line_starts
+            .get(line_index + 1)
+            .copied()
+            .unwrap_or(self.text.len() as u32);
+        let mut best: Option<&Record> = None;
+        for record in &self.records {
+            if record.byte_end <= line_start || record.byte_start >= line_end {
+                continue;
+            }
+            let better = match best {
+                None => true,
+                Some(current) => {
+                    record.depth > current.depth
+                        || (record.depth == current.depth
+                            && record.byte_end.saturating_sub(record.byte_start)
+                                <= current.byte_end.saturating_sub(current.byte_start))
+                }
+            };
+            if better {
+                best = Some(record);
+            }
+        }
+        best
+    }
+
     pub fn subtree(&self, root_id: u32) -> Vec<TreeNode> {
         let Some(root) = self.records.get(root_id as usize) else {
             return Vec::new();

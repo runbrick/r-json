@@ -163,6 +163,17 @@ fn node_detail(state: State<AppState>, node_id: u32) -> Result<NodeDetail, Strin
 }
 
 #[tauri::command]
+fn node_at_line(state: State<AppState>, line: u32) -> Result<NodeDetail, String> {
+    state
+        .session
+        .lock()
+        .expect("session lock")
+        .as_ref()
+        .and_then(|session| session.node_at_line(line))
+        .ok_or_else(|| "Node not found".to_string())
+}
+
+#[tauri::command]
 fn text_window(
     state: State<AppState>,
     start_line: u32,
@@ -272,6 +283,7 @@ pub fn run() {
             reveal_tree,
             search_document,
             node_detail,
+            node_at_line,
             text_window,
             format_document,
             minify_document,

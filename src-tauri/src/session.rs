@@ -162,6 +162,11 @@ impl Session {
         self.graph()
     }
 
+    pub fn node_at_line(&self, line: u32) -> Option<NodeDetail> {
+        let record = self.index.record_at_line(line)?;
+        self.detail(record.id)
+    }
+
     pub fn detail(&self, node_id: u32) -> Option<NodeDetail> {
         let record = self.index.records.get(node_id as usize)?;
         let json = self
