@@ -24,6 +24,12 @@
   <p>
     English | <a href="README.zh-CN.md">中文</a>
   </p>
+  <p>
+    <img src="doc/01.png" alt="R JSON tree view" width="820" />
+  </p>
+  <p>
+    <img src="doc/02.png" alt="R JSON graph view" width="820" />
+  </p>
 </div>
 
 JSON, YAML, XML, CSV, and TOML are parsed and indexed in Rust. Graph layout, parallel search, conversion, JSON Schema, code generation, jq, JSONPath, and JMESPath also run in the Rust process. The webview only renders the current viewport, so large documents do not have to be copied into the UI as a DOM tree.

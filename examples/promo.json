@@ -1,0 +1,70 @@
+{
+  "app": {
+    "name": "R JSON",
+    "version": "0.1.0",
+    "tagline": "Local high-performance JSON visualizer",
+    "offline": true,
+    "privacy": "fully local"
+  },
+  "engine": {
+    "backend": "Rust",
+    "shell": "Tauri 2",
+    "editor": "CodeMirror 6",
+    "layoutMs": 4.2,
+    "parseMs": 1.8
+  },
+  "formats": ["JSON", "YAML", "XML", "CSV", "TOML"],
+  "views": {
+    "tree": {
+      "enabled": true,
+      "collapse": true,
+      "search": ["key", "value", "path"]
+    },
+    "graph": {
+      "enabled": true,
+      "pan": true,
+      "zoom": true,
+      "directions": ["right", "left", "down", "up"]
+    }
+  },
+  "tools": {
+    "edit": ["format", "minify", "escape", "repair"],
+    "query": ["jq", "JSONPath", "JMESPath"],
+    "generate": ["TypeScript", "Rust", "Go", "Kotlin", "JSON Schema"],
+    "export": ["SVG", "PNG"]
+  },
+  "document": {
+    "id": "ord_9f2a1c",
+    "status": "paid",
+    "priority": 3,
+    "reviewed": false,
+    "coupon": null,
+    "customer": {
+      "name": "Ava Chen",
+      "plan": "Pro",
+      "region": "ap-east-1"
+    },
+    "items": [
+      {
+        "sku": "json-viewer",
+        "title": "Visual inspect",
+        "qty": 1,
+        "price": 0
+      },
+      {
+        "sku": "schema-gen",
+        "title": "Infer Draft-07",
+        "qty": 1,
+        "price": 0
+      },
+      {
+        "sku": "code-gen",
+        "title": "Emit types",
+        "qty": 4,
+        "price": 0
+      }
+    ],
+    "total": 0,
+    "currency": "USD"
+  }
+}

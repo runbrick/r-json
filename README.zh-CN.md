@@ -24,6 +24,12 @@
   <p>
     <a href="README.md">English</a> | 中文
   </p>
+  <p>
+    <img src="doc/01.png" alt="R JSON 树形视图" width="820" />
+  </p>
+  <p>
+    <img src="doc/02.png" alt="R JSON 图形视图" width="820" />
+  </p>
 </div>
 
 JSON、YAML、XML、CSV、TOML 的解析与索引都在 Rust 中完成。图布局、并行搜索、格式转换、JSON Schema、代码生成、jq、JSONPath、JMESPath 同样运行在 Rust 进程里。Webview 只渲染当前视口，大文件不必整棵拷进 DOM。
