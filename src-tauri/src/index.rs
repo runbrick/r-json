@@ -171,23 +171,114 @@ fn walk(
 }
 
 fn assign_text_offsets(records: &mut [Record], text: &str) {
-    let mut cursor = 0usize;
-    for record in records.iter_mut() {
-        let token = record.key.as_deref().unwrap_or(&record.preview);
-        if token.is_empty() {
-            continue;
+    if records.is_empty() {
+        return;
+    }
+    let bytes = text.as_bytes();
+    let mut pos = 0usize;
+    skip_ws(bytes, &mut pos);
+    scan_value(records, 0, bytes, &mut pos);
+}
+
+fn scan_value(records: &mut [Record], id: u32, bytes: &[u8], pos: &mut usize) {
+    skip_ws(bytes, pos);
+    let start = *pos;
+    let Some(record) = records.get(id as usize) else {
+        return;
+    };
+    let kind = record.kind;
+    let children = record.children.clone();
+
+    match kind {
+        ValueKind::Object => {
+            if consume(bytes, pos, b'{') {
+                for child_id in children {
+                    skip_ws(bytes, pos);
+                    let child_start = *pos;
+                    skip_string(bytes, pos);
+                    skip_ws(bytes, pos);
+                    let _ = consume(bytes, pos, b':');
+                    scan_value(records, child_id, bytes, pos);
+                    let value_end = *pos;
+                    skip_ws(bytes, pos);
+                    let child_end = if consume(bytes, pos, b',') { *pos } else { value_end };
+                    if let Some(child) = records.get_mut(child_id as usize) {
+                        child.byte_start = child_start as u32;
+                        child.byte_end = child_end as u32;
+                    }
+                }
+                skip_ws(bytes, pos);
+                let _ = consume(bytes, pos, b'}');
+            } else {
+                skip_literal(bytes, pos);
+            }
         }
-        let haystack = if cursor < text.len() { &text[cursor..] } else { text };
-        if let Some(relative) = haystack.find(token) {
-            let offset = cursor + relative;
-            record.byte_start = offset as u32;
-            record.byte_end = (offset + token.len()) as u32;
-            cursor = offset + token.len();
-        } else if let Some(offset) = text.find(token) {
-            record.byte_start = offset as u32;
-            record.byte_end = (offset + token.len()) as u32;
-            cursor = offset + token.len();
+        ValueKind::Array => {
+            if consume(bytes, pos, b'[') {
+                for child_id in children {
+                    skip_ws(bytes, pos);
+                    let child_start = *pos;
+                    scan_value(records, child_id, bytes, pos);
+                    let value_end = *pos;
+                    skip_ws(bytes, pos);
+                    let child_end = if consume(bytes, pos, b',') { *pos } else { value_end };
+                    if let Some(child) = records.get_mut(child_id as usize) {
+                        child.byte_start = child_start as u32;
+                        child.byte_end = child_end as u32;
+                    }
+                }
+                skip_ws(bytes, pos);
+                let _ = consume(bytes, pos, b']');
+            } else {
+                skip_literal(bytes, pos);
+            }
         }
+        ValueKind::String => skip_string(bytes, pos),
+        _ => skip_literal(bytes, pos),
+    }
+
+    if id == 0 {
+        if let Some(record) = records.get_mut(id as usize) {
+            record.byte_start = start as u32;
+            record.byte_end = *pos as u32;
+        }
+    }
+}
+
+fn skip_ws(bytes: &[u8], pos: &mut usize) {
+    while *pos < bytes.len() && matches!(bytes[*pos], b' ' | b'\n' | b'\r' | b'\t') {
+        *pos += 1;
+    }
+}
+
+fn consume(bytes: &[u8], pos: &mut usize, expected: u8) -> bool {
+    if bytes.get(*pos) == Some(&expected) {
+        *pos += 1;
+        true
+    } else {
+        false
+    }
+}
+
+fn skip_string(bytes: &[u8], pos: &mut usize) {
+    if !consume(bytes, pos, b'"') {
+        return;
+    }
+    while *pos < bytes.len() {
+        match bytes[*pos] {
+            b'\\' => *pos = (*pos + 2).min(bytes.len()),
+            b'"' => {
+                *pos += 1;
+                return;
+            }
+            _ => *pos += 1,
+        }
+    }
+}
+
+fn skip_literal(bytes: &[u8], pos: &mut usize) {
+    while *pos < bytes.len() && !matches!(bytes[*pos], b',' | b'}' | b']' | b' ' | b'\n' | b'\r' | b'\t') {
+        *pos += 1;
     }
 }
 

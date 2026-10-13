@@ -168,6 +168,9 @@ impl Session {
             .index
             .node_value(node_id)
             .and_then(|value| serde_json::to_string_pretty(&value).ok())?;
+        let (start_line, _) = self.index.line_column(record.byte_start);
+        let last_byte = record.byte_end.saturating_sub(1).max(record.byte_start);
+        let (end_line, _) = self.index.line_column(last_byte);
         Some(NodeDetail {
             id: record.id,
             path: record.path.clone(),
@@ -177,6 +180,8 @@ impl Session {
             child_count: record.child_count,
             byte_start: record.byte_start,
             byte_end: record.byte_end,
+            start_line,
+            end_line,
         })
     }
 

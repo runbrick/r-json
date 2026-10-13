@@ -390,22 +390,69 @@ button:disabled { opacity: 0.4; cursor: default; }
   tab-size: 2;
 }
 .json-editor {
+  position: relative;
   height: 100%;
   overflow: auto;
-  padding: 8px 0 16px;
   background: var(--bg);
   font-family: var(--mono);
   font-size: 13px;
   line-height: 20px;
 }
+.json-editor-sizer {
+  width: 1px;
+  pointer-events: none;
+}
+.json-editor-window {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+}
 .json-line {
   display: grid;
   grid-template-columns: 52px 18px minmax(0, 1fr);
   align-items: start;
+  height: 20px;
   min-height: 20px;
   padding-right: 16px;
 }
 .json-line:hover { background: var(--hover); }
+.json-line.source-wrap .json-code {
+  display: block;
+  align-self: stretch;
+  min-height: 20px;
+  background: var(--selected);
+  margin-right: 10px;
+  padding: 0 8px;
+}
+.json-line.source-wrap-single .json-code {
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.json-line.source-wrap-start .json-code {
+  border-radius: 8px 8px 0 0;
+  box-shadow:
+    inset 1px 1px 0 0 color-mix(in srgb, var(--accent) 32%, transparent),
+    inset -1px 0 0 0 color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.json-line.source-wrap-mid .json-code {
+  box-shadow:
+    inset 1px 0 0 0 color-mix(in srgb, var(--accent) 32%, transparent),
+    inset -1px 0 0 0 color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.json-line.source-wrap-end .json-code {
+  border-radius: 0 0 8px 8px;
+  box-shadow:
+    inset 1px -1px 0 0 color-mix(in srgb, var(--accent) 32%, transparent),
+    inset -1px 0 0 0 color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.json-line.source-wrap:hover { background: transparent; }
+.json-code .key { color: var(--key); }
+.json-code .string { color: var(--string); }
+.json-code .number { color: var(--number); }
+.json-code .boolean.true { color: var(--true); }
+.json-code .boolean.false { color: var(--false); }
+.json-code .null { color: var(--null); }
 .json-line-number {
   padding-right: 8px;
   border-right: 1px solid var(--line);

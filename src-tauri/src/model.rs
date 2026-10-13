@@ -140,6 +140,8 @@ pub struct NodeDetail {
     pub child_count: u32,
     pub byte_start: u32,
     pub byte_end: u32,
+    pub start_line: u32,
+    pub end_line: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

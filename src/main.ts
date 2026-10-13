@@ -25,6 +25,8 @@ interface GraphNode {
   y: number;
   width: number;
   height: number;
+  textStart: number;
+  textEnd: number;
   rows: FieldRow[];
 }
 
@@ -90,6 +92,24 @@ interface FoldRange {
   end: number;
 }
 
+interface NodeDetail {
+  id: number;
+  path: string;
+  kind: ValueKind;
+  key: string | null;
+  json: string;
+  childCount: number;
+  byteStart: number;
+  byteEnd: number;
+  startLine: number;
+  endLine: number;
+}
+
+interface SourceRange {
+  startLine: number;
+  endLine: number;
+}
+
 const editor = document.querySelector<HTMLTextAreaElement>("#editor")!;
 const jsonEditor = document.querySelector<HTMLElement>("#json-editor")!;
 const editorShell = document.querySelector<HTMLElement>("#editor-shell")!;
@@ -121,13 +141,18 @@ let searchHits: SearchHit[] = [];
 let searchActiveIndex = -1;
 let searchRequestId = 0;
 let selectedPath = "$";
+let selectedSourceRange: SourceRange | null = null;
 let treeData: TreeNode[] = [];
 let pathMode: "jmes" | "json" = "jmes";
 const collapsedFolds = new Set<number>();
 let foldRanges: FoldRange[] = [];
 let skipLiveParse = false;
 let graphReady = false;
-const FOLD_EDITOR_LINE_LIMIT = 800;
+let jsonEditorLines: string[] = [];
+let jsonEditorVisibleIndexes: number[] = [];
+let jsonEditorScrollBound = false;
+const JSON_LINE_HEIGHT = 20;
+const JSON_EDITOR_OVERSCAN = 24;
 
 function yieldToUi(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
@@ -143,6 +168,7 @@ function resetWorkspace() {
   graphReady = false;
   selectedId = null;
   selectedPath = "$";
+  selectedSourceRange = null;
   hideSearchResults();
   nodesLayer.replaceChildren();
   edges.innerHTML = "";
@@ -228,8 +254,93 @@ function collectFoldRanges(text: string): FoldRange[] {
   return ranges;
 }
 
-function isLineHidden(lineIndex: number): boolean {
-  return foldRanges.some((range) => collapsedFolds.has(range.start) && lineIndex > range.start && lineIndex < range.end);
+function sourceRangeClass(lineIndex: number): string {
+  if (!selectedSourceRange) return "";
+  const start = selectedSourceRange.startLine;
+  const end = selectedSourceRange.endLine;
+  if (lineIndex < start || lineIndex > end) return "";
+  if (start === end) return " source-wrap source-wrap-single";
+  if (lineIndex === start) return " source-wrap source-wrap-start";
+  if (lineIndex === end) return " source-wrap source-wrap-end";
+  return " source-wrap source-wrap-mid";
+}
+
+function revealSourceRange(range: SourceRange) {
+  for (const fold of foldRanges) {
+    const overlaps = fold.start <= range.endLine && fold.end >= range.startLine;
+    if (overlaps) collapsedFolds.delete(fold.start);
+  }
+}
+
+function bindJsonEditorScroll() {
+  if (jsonEditorScrollBound) return;
+  jsonEditorScrollBound = true;
+  jsonEditor.addEventListener("scroll", () => {
+    renderJsonEditorWindow();
+  });
+}
+
+function hiddenLineSet(lineCount: number): Set<number> {
+  const hidden = new Set<number>();
+  for (const range of foldRanges) {
+    if (!collapsedFolds.has(range.start)) continue;
+    const last = Math.min(range.end, lineCount - 1);
+    for (let index = range.start + 1; index < last; index += 1) hidden.add(index);
+  }
+  return hidden;
+}
+
+function visibleLineIndexes(lineCount: number): number[] {
+  const hidden = hiddenLineSet(lineCount);
+  const indexes: number[] = [];
+  for (let index = 0; index < lineCount; index += 1) {
+    if (!hidden.has(index)) indexes.push(index);
+  }
+  return indexes;
+}
+
+function sourceRangeFromDetail(detail: NodeDetail): SourceRange {
+  if (Number.isFinite(detail.startLine) && Number.isFinite(detail.endLine) && (detail.startLine > 0 || detail.endLine > 0)) {
+    return {
+      startLine: Math.max(0, detail.startLine - 1),
+      endLine: Math.max(0, detail.endLine - 1),
+    };
+  }
+  if (detail.key) {
+    const located = locateKeyRange(detail.key, editor.value);
+    if (located) return located;
+  }
+  return { startLine: 0, endLine: 0 };
+}
+
+function locateKeyRange(key: string, text: string): SourceRange | null {
+  const lines = text.split("\n");
+  const needle = `"${key}"`;
+  for (let index = 0; index < lines.length; index += 1) {
+    const trimmed = lines[index].trimStart();
+    if (!trimmed.startsWith(needle)) continue;
+    const opener = trimmed.includes("{") ? "{" : trimmed.includes("[") ? "[" : "";
+    if (!opener) return { startLine: index, endLine: index };
+    const closer = opener === "{" ? "}" : "]";
+    let depth = 0;
+    for (let cursor = index; cursor < lines.length; cursor += 1) {
+      for (const character of lines[cursor]) {
+        if (character === opener) depth += 1;
+        else if (character === closer) depth -= 1;
+      }
+      if (depth === 0) return { startLine: index, endLine: cursor };
+    }
+    return { startLine: index, endLine: index };
+  }
+  return null;
+}
+
+function scrollSourceRangeIntoView() {
+  if (!selectedSourceRange) return;
+  const target = jsonEditorVisibleIndexes.findIndex((lineIndex) => lineIndex >= selectedSourceRange!.startLine);
+  if (target < 0) return;
+  const maxScroll = Math.max(0, jsonEditorVisibleIndexes.length * JSON_LINE_HEIGHT - jsonEditor.clientHeight);
+  jsonEditor.scrollTop = Math.min(maxScroll, Math.max(0, target * JSON_LINE_HEIGHT - jsonEditor.clientHeight / 3));
 }
 
 function highlightJsonLine(line: string): string {
@@ -244,28 +355,50 @@ function highlightJsonLine(line: string): string {
     .replace(/([{}[\],])/g, `<span class="json-punct">$1</span>`);
 }
 
-function renderJsonEditor() {
+function renderJsonEditor(scrollToSelection = false) {
+  bindJsonEditorScroll();
   const text = editor.value;
-  const lines = text.split("\n");
-  if (lines.length > FOLD_EDITOR_LINE_LIMIT) {
-    editorShell.classList.remove("fold-mode");
-    jsonEditor.replaceChildren();
-    syncGutter();
-    return;
-  }
+  jsonEditorLines = text.split("\n");
+  editorShell.classList.add("fold-mode");
   foldRanges = collectFoldRanges(text);
   const validStarts = new Set(foldRanges.map((range) => range.start));
   for (const start of [...collapsedFolds]) {
     if (!validStarts.has(start)) collapsedFolds.delete(start);
   }
-  jsonEditor.replaceChildren();
+  if (selectedSourceRange) revealSourceRange(selectedSourceRange);
+  jsonEditorVisibleIndexes = visibleLineIndexes(jsonEditorLines.length);
+  if (!jsonEditor.querySelector(".json-editor-window") || !jsonEditor.querySelector(".json-editor-sizer")) {
+    jsonEditor.replaceChildren();
+    const sizer = document.createElement("div");
+    sizer.className = "json-editor-sizer";
+    const window = document.createElement("div");
+    window.className = "json-editor-window";
+    jsonEditor.append(sizer, window);
+  }
+  const sizer = jsonEditor.querySelector<HTMLElement>(".json-editor-sizer")!;
+  sizer.style.height = `${Math.max(1, jsonEditorVisibleIndexes.length) * JSON_LINE_HEIGHT}px`;
+  if (scrollToSelection) scrollSourceRangeIntoView();
+  renderJsonEditorWindow();
+}
+
+function renderJsonEditorWindow() {
+  const window = jsonEditor.querySelector<HTMLElement>(".json-editor-window");
+  const sizer = jsonEditor.querySelector<HTMLElement>(".json-editor-sizer");
+  if (!window || !sizer) return;
+  const total = jsonEditorVisibleIndexes.length;
+  const viewportCount = Math.max(1, Math.ceil(jsonEditor.clientHeight / JSON_LINE_HEIGHT) + JSON_EDITOR_OVERSCAN * 2);
+  const first = Math.max(0, Math.floor(jsonEditor.scrollTop / JSON_LINE_HEIGHT) - JSON_EDITOR_OVERSCAN);
+  const last = Math.min(total, first + viewportCount);
+  window.style.top = `${first * JSON_LINE_HEIGHT}px`;
+  window.replaceChildren();
   const fragment = document.createDocumentFragment();
-  for (let index = 0; index < lines.length; index += 1) {
-    if (isLineHidden(index)) continue;
+  for (let visibleIndex = first; visibleIndex < last; visibleIndex += 1) {
+    const index = jsonEditorVisibleIndexes[visibleIndex];
     const range = foldRanges.find((item) => item.start === index);
     const collapsed = Boolean(range && collapsedFolds.has(index));
     const row = document.createElement("div");
-    row.className = "json-line";
+    row.className = `json-line${sourceRangeClass(index)}`;
+    row.dataset.line = String(index);
     const number = document.createElement("span");
     number.className = "json-line-number";
     number.textContent = String(index + 1);
@@ -274,7 +407,9 @@ function renderJsonEditor() {
     fold.className = `json-fold${range ? " has-children" : ""}`;
     fold.textContent = range ? (collapsed ? "▸" : "▾") : "";
     if (range) {
-      fold.addEventListener("click", () => {
+      fold.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
         if (collapsedFolds.has(index)) collapsedFolds.delete(index);
         else collapsedFolds.add(index);
         renderJsonEditor();
@@ -282,7 +417,7 @@ function renderJsonEditor() {
     }
     const code = document.createElement("span");
     code.className = "json-code";
-    code.innerHTML = highlightJsonLine(lines[index] || " ");
+    code.innerHTML = highlightJsonLine(jsonEditorLines[index] || " ");
     if (collapsed && range) {
       const preview = document.createElement("span");
       preview.className = "json-collapsed";
@@ -292,7 +427,7 @@ function renderJsonEditor() {
     row.append(number, fold, code);
     fragment.append(row);
   }
-  jsonEditor.append(fragment);
+  window.append(fragment);
 }
 
 function setEditorText(value: string, parse = true) {
@@ -371,13 +506,11 @@ async function loadContents(contents: string, name = fileName) {
     treeData = loaded.tree;
     selectedId = null;
     selectedPath = "$";
+    selectedSourceRange = null;
     emptyState.classList.add("hidden");
     collapsedFolds.clear();
-    const lineCount = loaded.pretty.split("\n").length;
-    if (lineCount <= FOLD_EDITOR_LINE_LIMIT) editorShell.classList.add("fold-mode");
-    else editorShell.classList.remove("fold-mode");
+    editorShell.classList.add("fold-mode");
     await yieldToUi();
-    syncGutter();
     renderJsonEditor();
     await yieldToUi();
     renderTree(loaded.tree);
@@ -427,14 +560,12 @@ function renderGraph() {
       })
       .join("");
     card.innerHTML = `<header><button class="collapse">${node.collapsed ? "+" : "–"}</button><span>${escapeHtml(title)}</span><span class="preview">${escapeHtml(node.preview)}</span></header>${rows}`;
-    card.addEventListener("click", (event) => {
-      if (panMoved) {
-        event.preventDefault();
-        return;
-      }
+    card.addEventListener("pointerup", (event) => {
+      if (panMoved) return;
+      event.stopPropagation();
       const row = (event.target as HTMLElement).closest<HTMLElement>("[data-row-id]");
       const rowId = row?.dataset.rowId ? Number(row.dataset.rowId) : node.id;
-      void selectNode(rowId);
+      void selectNode(rowId, row ? undefined : node.path);
     });
     card.querySelector("button")?.addEventListener("click", async (event) => {
       event.stopPropagation();
@@ -468,6 +599,7 @@ function collectAncestorIds(nodes: TreeNode[], targetId: number): Set<number> {
 function renderTree(nodes: TreeNode[], scrollToSelected = false) {
   treePane.replaceChildren();
   const expandAncestors = selectedId === null ? new Set<number>() : collectAncestorIds(nodes, selectedId);
+  if (selectedId !== null) expandAncestors.add(selectedId);
   const fragment = document.createDocumentFragment();
   for (const node of nodes) fragment.append(renderTreeNode(node, true, expandAncestors));
   treePane.append(fragment);
@@ -541,10 +673,7 @@ function renderTreeNode(node: TreeNode, expanded: boolean, expandAncestors: Set<
   });
   row.addEventListener("click", (event) => {
     if ((event.target as HTMLElement).closest(".tree-action")) return;
-    selectedId = node.id;
-    selectedPath = node.path;
-    treePane.querySelectorAll(".tree-row.active").forEach((active) => active.classList.remove("active"));
-    row.classList.add("active");
+    void selectNode(node.id, node.path);
     if (!hasChildren) return;
     const nextOpen = children.hidden;
     children.hidden = !nextOpen;
@@ -588,17 +717,23 @@ async function selectNode(nodeId: number, path?: string) {
   if (!treeContains(treeData, nodeId)) {
     try {
       treeData = await invoke<TreeNode[]>("reveal_tree", { nodeId });
+      renderTree(treeData, true);
     } catch {
       // Keep the current tree if the node cannot be revealed.
     }
+  } else {
+    treePane.querySelectorAll(".tree-row.active").forEach((active) => active.classList.remove("active"));
+    treePane.querySelector<HTMLElement>(`.tree-row[data-node-id="${nodeId}"]`)?.classList.add("active");
   }
-  renderTree(treeData, true);
   try {
-    const detail = await invoke<{ path: string; json: string }>("node_detail", { nodeId });
+    const detail = await invoke<NodeDetail>("node_detail", { nodeId });
     selectedPath = detail.path;
+    selectedSourceRange = sourceRangeFromDetail(detail);
   } catch {
     selectedPath = path ?? selectedPath;
+    selectedSourceRange = path ? locateKeyRange(path.split(".").pop()?.replace(/\[.*$/, "") ?? "", editor.value) : null;
   }
+  renderJsonEditor(true);
 }
 
 function treeContains(nodes: TreeNode[], nodeId: number): boolean {
@@ -1226,9 +1361,10 @@ function bindInterface() {
   let dragY = 0;
   inspectorBody.addEventListener("pointerdown", (event) => {
     if (isTreeMode()) return;
-    if ((event.target as HTMLElement).closest("button, input, select, textarea")) return;
-    dragging = true;
     panMoved = false;
+    const target = event.target as HTMLElement;
+    if (target.closest("button, input, select, textarea, .node")) return;
+    dragging = true;
     dragX = event.clientX;
     dragY = event.clientY;
     inspectorBody.setPointerCapture(event.pointerId);
