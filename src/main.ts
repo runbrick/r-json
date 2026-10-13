@@ -164,6 +164,7 @@ let selectedPath = "$";
 let treeData: TreeNode[] = [];
 let pathMode: "jmes" | "json" = "jmes";
 let skipLiveParse = false;
+let loadRequestId = 0;
 let graphReady = false;
 let sourceEditor: EditorView | null = null;
 let selectingFromSource = false;
@@ -378,7 +379,7 @@ function scheduleLiveParse() {
   const text = currentEditorText();
   const delay = text.length > 80_000 ? 600 : 180;
   liveTimer = window.setTimeout(() => {
-    void loadContents(text, fileName);
+    void loadContents(text, fileName, { replaceEditor: false });
   }, delay);
 }
 
@@ -506,28 +507,39 @@ function showValid(documentState: LoadedDocument) {
   }
 }
 
-async function loadContents(contents: string, name = fileName) {
+async function loadContents(
+  contents: string,
+  name = fileName,
+  options: { replaceEditor?: boolean } = {},
+) {
+  const replaceEditor = options.replaceEditor !== false;
+  const requestId = ++loadRequestId;
   fileName = name;
   fileLabel.textContent = name;
   document.title = `${name} | R JSON`;
   stats.textContent = "正在加载…";
   try {
     const loaded = await invoke<LoadedDocument>("load_document", { contents, fileName: name });
-    skipLiveParse = true;
-    setEditorText(loaded.pretty, false);
-    skipLiveParse = false;
+    if (requestId !== loadRequestId) return;
+    if (replaceEditor) {
+      skipLiveParse = true;
+      setEditorText(loaded.pretty, false);
+      skipLiveParse = false;
+      selectedId = null;
+      selectedPath = "$";
+      applySourceRange(null);
+    }
     graph = loaded.graph;
     graphReady = false;
     treeData = loaded.tree;
-    selectedId = null;
-    selectedPath = "$";
-    applySourceRange(null);
     emptyState.classList.add("hidden");
     await yieldToUi();
+    if (requestId !== loadRequestId) return;
     renderTree(loaded.tree);
     showValid(loaded);
     if (!isTreeMode()) await ensureGraphRendered();
   } catch (error) {
+    if (requestId !== loadRequestId) return;
     showError(String(error));
   }
 }
