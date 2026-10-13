@@ -1239,8 +1239,6 @@ function bindInterface() {
   byId("export-png").onclick = () => void exportPng();
   byId("modal-close").onclick = () => modal.classList.add("hidden");
   byId("copy-result").onclick = () => void copyText(modalBody.textContent ?? "", "代码");
-  byId("copy-jsonpath").onclick = () => void copyText(selectedPath, "JSONPath");
-  byId("copy-jmespath").onclick = () => void copyText(toJmesPath(selectedPath), "JMESPath");
   const pathModeMenu = byId("path-mode-menu");
   const pathModeRoot = document.querySelector<HTMLElement>(".path-mode")!;
   byId("path-mode-trigger").onclick = (event) => {
