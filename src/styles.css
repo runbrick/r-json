@@ -307,6 +307,29 @@ button:disabled { opacity: 0.4; cursor: default; }
   font-size: 12px;
 }
 .status-button:hover { background: var(--hover); color: var(--text); }
+.status-icon {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  color: var(--muted);
+  padding: 0;
+}
+.status-icon:hover { background: var(--hover); color: var(--text); }
+.status-icon svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.status-icon #theme-moon {
+  fill: currentColor;
+  stroke: none;
+}
 .search-results button { display: grid; justify-items: start; gap: 2px; }
 .search-results small, .muted { color: var(--faint); }
 

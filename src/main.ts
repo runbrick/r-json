@@ -5,7 +5,6 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 
 type ValueKind = "object" | "array" | "string" | "number" | "boolean" | "null";
-type Direction = "RIGHT" | "LEFT" | "DOWN" | "UP";
 
 interface FieldRow {
   key: string;
@@ -1065,25 +1064,37 @@ function bindInterface() {
   byId("open-file").onclick = () => void openFile();
   byId("save-file").onclick = () => void saveFile();
   byId("import-url").onclick = async () => loadContents(await navigator.clipboard.readText(), "Clipboard.json");
-  byId("center-view").onclick = centerView;
-  byId("expand-all").onclick = async () => {
-    graph = await invoke("expand_all", { expanded: true });
-    graphReady = true;
-    if (!isTreeMode()) renderGraph();
+  const themeToggle = byId("theme-toggle");
+  const syncThemeToggle = () => {
+    const isLight = document.documentElement.dataset.theme !== "dark";
+    byId("theme-sun").classList.toggle("hidden", isLight);
+    byId("theme-moon").classList.toggle("hidden", !isLight);
+    const label = isLight ? "切换到深色主题" : "切换到浅色主题";
+    themeToggle.title = label;
+    themeToggle.setAttribute("aria-label", label);
   };
-  byId("collapse-all").onclick = async () => {
-    graph = await invoke("expand_all", { expanded: false });
-    graphReady = true;
-    if (!isTreeMode()) renderGraph();
-  };
-  byId("theme-toggle").onclick = () => {
+  themeToggle.onclick = () => {
     const root = document.documentElement;
     root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light";
+    syncThemeToggle();
   };
-  byId("fullscreen").onclick = () => {
+  syncThemeToggle();
+
+  const fullscreenButton = byId("fullscreen");
+  const syncFullscreenToggle = () => {
+    const active = Boolean(document.fullscreenElement);
+    byId("fullscreen-enter").classList.toggle("hidden", active);
+    byId("fullscreen-exit").classList.toggle("hidden", !active);
+    const label = active ? "退出全屏" : "全屏";
+    fullscreenButton.title = label;
+    fullscreenButton.setAttribute("aria-label", label);
+  };
+  fullscreenButton.onclick = () => {
     if (document.fullscreenElement) void document.exitFullscreen();
     else void document.documentElement.requestFullscreen();
   };
+  document.addEventListener("fullscreenchange", syncFullscreenToggle);
+  syncFullscreenToggle();
   byId("toggle-editor").onclick = () => byId("workspace").classList.toggle("editor-open");
   byId("open-schema").onclick = () => void openSchemaModal(true);
   byId("schema-modal-close").onclick = () => schemaModal.classList.add("hidden");
@@ -1133,13 +1144,6 @@ function bindInterface() {
 
   document.querySelectorAll<HTMLButtonElement>("[data-view]").forEach((button) => {
     button.onclick = () => applyView(button.dataset.view as "graph" | "tree");
-  });
-  document.querySelectorAll<HTMLButtonElement>("[data-direction]").forEach((button) => {
-    button.onclick = async () => {
-      graph = await invoke("set_layout", { direction: button.dataset.direction as Direction });
-      graphReady = true;
-      if (!isTreeMode()) renderGraph();
-    };
   });
   document.querySelectorAll<HTMLButtonElement>("[data-tool]").forEach((button) => {
     button.onclick = () => void runTool(button.dataset.tool!);

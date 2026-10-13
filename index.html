@@ -23,32 +23,12 @@
               </div>
             </div>
             <div class="menu">
-              <button class="menu-trigger" type="button">视图</button>
-              <div class="menu-panel">
-                <button data-view="tree">树形</button>
-                <button data-view="graph">图形</button>
-                <div class="divider"></div>
-                <button data-direction="RIGHT">从左到右</button>
-                <button data-direction="LEFT">从右到左</button>
-                <button data-direction="DOWN">从上到下</button>
-                <button data-direction="UP">从下到上</button>
-                <div class="divider"></div>
-                <button id="center-view">居中视图</button>
-                <button id="expand-all">全部展开</button>
-                <button id="collapse-all">全部折叠</button>
-                <div class="divider"></div>
-                <button id="theme-toggle">切换主题</button>
-                <button id="fullscreen">全屏</button>
-              </div>
-            </div>
-            <div class="menu">
               <button class="menu-trigger" type="button">工具</button>
               <div class="menu-panel">
                 <button data-tool="format">美化</button>
                 <button data-tool="minify">压缩</button>
                 <button data-tool="repair">修复 JSON</button>
                 <div class="divider"></div>
-                <button data-convert="json">转为 JSON</button>
                 <button data-convert="yaml">转为 YAML</button>
                 <button data-convert="xml">转为 XML</button>
                 <button data-convert="csv">转为 CSV</button>
@@ -164,6 +144,23 @@
           <button id="toggle-editor" class="status-button">编辑器</button>
           <button id="export-svg" class="status-button">导出 SVG</button>
           <button id="export-png" class="status-button">导出 PNG</button>
+          <button id="theme-toggle" class="status-icon" type="button" title="切换主题" aria-label="切换主题">
+            <svg id="theme-moon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M12.6 10.4A5.6 5.6 0 0 1 6.4 2.8 6 6 0 1 0 12.6 10.4z" />
+            </svg>
+            <svg id="theme-sun" class="hidden" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="2.6" />
+              <path d="M8 1.6v1.8M8 12.6v1.8M1.6 8h1.8M12.6 8h1.8M3.3 3.3l1.3 1.3M11.4 11.4l1.3 1.3M3.3 12.7l1.3-1.3M11.4 4.6l1.3-1.3" />
+            </svg>
+          </button>
+          <button id="fullscreen" class="status-icon" type="button" title="全屏" aria-label="全屏">
+            <svg id="fullscreen-enter" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 6.2V3h3.2M10 3h3v3.2M13 10v3h-3.2M6.2 13H3v-3.2" />
+            </svg>
+            <svg id="fullscreen-exit" class="hidden" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M6.2 3v3.2H3M10 3v3.2h3.2M3 10h3.2V13M13 10h-3.2V13" />
+            </svg>
+          </button>
         </div>
       </footer>
     </div>
