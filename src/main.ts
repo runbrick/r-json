@@ -127,6 +127,12 @@ let pathMode: "jmes" | "json" = "jmes";
 const collapsedFolds = new Set<number>();
 let foldRanges: FoldRange[] = [];
 let skipLiveParse = false;
+let graphReady = false;
+const FOLD_EDITOR_LINE_LIMIT = 800;
+
+function yieldToUi(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
 
 function resetWorkspace() {
   fileName = "Untitled.json";
@@ -135,6 +141,7 @@ function resetWorkspace() {
   editor.value = "";
   graph = null;
   treeData = [];
+  graphReady = false;
   selectedId = null;
   selectedPath = "$";
   hideSearchResults();
@@ -240,12 +247,18 @@ function highlightJsonLine(line: string): string {
 
 function renderJsonEditor() {
   const text = editor.value;
+  const lines = text.split("\n");
+  if (lines.length > FOLD_EDITOR_LINE_LIMIT) {
+    editorShell.classList.remove("fold-mode");
+    jsonEditor.replaceChildren();
+    syncGutter();
+    return;
+  }
   foldRanges = collectFoldRanges(text);
   const validStarts = new Set(foldRanges.map((range) => range.start));
   for (const start of [...collapsedFolds]) {
     if (!validStarts.has(start)) collapsedFolds.delete(start);
   }
-  const lines = text.split("\n");
   jsonEditor.replaceChildren();
   const fragment = document.createDocumentFragment();
   for (let index = 0; index < lines.length; index += 1) {
@@ -318,7 +331,21 @@ function applyView(view: "graph" | "tree") {
   document.querySelectorAll<HTMLButtonElement>("[data-view]").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === view);
   });
-  if (view === "graph") centerView();
+  if (view === "graph") void ensureGraphRendered();
+}
+
+async function ensureGraphRendered() {
+  if (!graphReady) {
+    try {
+      graph = await invoke<GraphPayload>("graph_view");
+      graphReady = true;
+    } catch (error) {
+      showError(String(error));
+      return;
+    }
+  }
+  renderGraph();
+  centerView();
 }
 
 function showValid(documentState: LoadedDocument) {
@@ -336,19 +363,27 @@ async function loadContents(contents: string, name = fileName) {
   fileName = name;
   fileLabel.textContent = name;
   document.title = `${name} | R JSON`;
+  stats.textContent = "正在加载…";
   try {
     const loaded = await invoke<LoadedDocument>("load_document", { contents, fileName: name });
     editor.value = loaded.pretty;
     graph = loaded.graph;
+    graphReady = false;
     treeData = loaded.tree;
+    selectedId = null;
+    selectedPath = "$";
     emptyState.classList.add("hidden");
-    editorShell.classList.add("fold-mode");
+    collapsedFolds.clear();
+    const lineCount = loaded.pretty.split("\n").length;
+    if (lineCount <= FOLD_EDITOR_LINE_LIMIT) editorShell.classList.add("fold-mode");
+    else editorShell.classList.remove("fold-mode");
+    await yieldToUi();
     syncGutter();
     renderJsonEditor();
-    renderGraph();
+    await yieldToUi();
     renderTree(loaded.tree);
     showValid(loaded);
-    centerView();
+    if (!isTreeMode()) await ensureGraphRendered();
   } catch (error) {
     showError(String(error));
   }
@@ -468,7 +503,8 @@ function renderTreeNode(node: TreeNode, expanded: boolean, expandAncestors: Set<
   item.className = "tree-node";
   const row = document.createElement("div");
   row.className = `tree-row${node.id === selectedId ? " active" : ""}`;
-  const hasChildren = node.children.length > 0;
+  row.dataset.nodeId = String(node.id);
+  const hasChildren = node.childCount > 0;
   const isExpanded = expanded || expandAncestors.has(node.id);
   const count = node.kind === "array" || node.kind === "object"
     ? `<span class="tree-count">(${node.childCount})</span>`
@@ -483,16 +519,19 @@ function renderTreeNode(node: TreeNode, expanded: boolean, expandAncestors: Set<
   const children = document.createElement("div");
   children.className = "tree-children";
   children.hidden = !isExpanded;
-  if (hasChildren) {
+  const mountLoadedChildren = () => {
+    children.replaceChildren();
     for (const child of node.children) {
-      const expandChild = (node.children.length < 12 && isExpanded) || expandAncestors.has(child.id);
-      children.append(renderTreeNode(child, expandChild, expandAncestors));
+      children.append(renderTreeNode(child, expandAncestors.has(child.id), expandAncestors));
     }
-    if (node.truncatedChildren) {
+    if (node.truncatedChildren && node.children.length > 0) {
       const note = document.createElement("small");
       note.textContent = `还有 ${node.childCount - node.children.length} 项`;
       children.append(note);
     }
+  };
+  if (hasChildren && isExpanded && node.children.length > 0) {
+    mountLoadedChildren();
   }
   row.querySelectorAll<HTMLButtonElement>(".tree-action").forEach((button) => {
     button.addEventListener("click", (event) => {
@@ -505,23 +544,55 @@ function renderTreeNode(node: TreeNode, expanded: boolean, expandAncestors: Set<
     if ((event.target as HTMLElement).closest(".tree-action")) return;
     selectedId = node.id;
     selectedPath = node.path;
-    treePane.querySelectorAll(".tree-row.active").forEach((item) => item.classList.remove("active"));
+    treePane.querySelectorAll(".tree-row.active").forEach((active) => active.classList.remove("active"));
     row.classList.add("active");
     if (!hasChildren) return;
     const nextOpen = children.hidden;
     children.hidden = !nextOpen;
     const toggle = row.querySelector(".tree-toggle");
     if (toggle) toggle.textContent = nextOpen ? "▾" : "▸";
+    if (nextOpen && children.childElementCount === 0) {
+      void expandTreeChildren(node, children, expandAncestors);
+    }
   });
   item.append(row);
   if (hasChildren) item.append(children);
   return item;
 }
 
+async function expandTreeChildren(node: TreeNode, container: HTMLElement, expandAncestors: Set<number>) {
+  if (node.children.length === 0) {
+    try {
+      node.children = await invoke<TreeNode[]>("tree_children", { parentId: node.id });
+      node.truncatedChildren = node.children.length < node.childCount;
+    } catch (error) {
+      container.textContent = String(error);
+      return;
+    }
+  }
+  const fragment = document.createDocumentFragment();
+  for (const child of node.children) {
+    fragment.append(renderTreeNode(child, expandAncestors.has(child.id), expandAncestors));
+  }
+  if (node.truncatedChildren && node.children.length > 0) {
+    const note = document.createElement("small");
+    note.textContent = `还有 ${node.childCount - node.children.length} 项`;
+    fragment.append(note);
+  }
+  container.replaceChildren(fragment);
+}
+
 async function selectNode(nodeId: number, path?: string) {
   selectedId = nodeId;
   if (path) selectedPath = path;
-  renderGraph();
+  if (graphReady) renderGraph();
+  if (!treeContains(treeData, nodeId)) {
+    try {
+      treeData = await invoke<TreeNode[]>("reveal_tree", { nodeId });
+    } catch {
+      // Keep the current tree if the node cannot be revealed.
+    }
+  }
   renderTree(treeData, true);
   try {
     const detail = await invoke<{ path: string; json: string }>("node_detail", { nodeId });
@@ -529,6 +600,14 @@ async function selectNode(nodeId: number, path?: string) {
   } catch {
     selectedPath = path ?? selectedPath;
   }
+}
+
+function treeContains(nodes: TreeNode[], nodeId: number): boolean {
+  for (const node of nodes) {
+    if (node.id === nodeId) return true;
+    if (treeContains(node.children, nodeId)) return true;
+  }
+  return false;
 }
 
 async function copyTreeNode(node: TreeNode, kind: "path" | "value", button: HTMLButtonElement) {
@@ -640,9 +719,9 @@ function syncPathModeUi() {
 async function copyText(value: string, label: string) {
   await navigator.clipboard.writeText(value);
   const status = byId("modal-status");
-  status.textContent = `${label} copied`;
+  status.textContent = `已复制${label}`;
   window.setTimeout(() => {
-    if (status.textContent === `${label} copied`) status.textContent = "";
+    if (status.textContent === `已复制${label}`) status.textContent = "";
   }, 1400);
 }
 
@@ -672,9 +751,10 @@ function escapeHtml(value: string): string {
 
 function scheduleLiveParse() {
   window.clearTimeout(liveTimer);
+  const delay = editor.value.length > 80_000 ? 600 : 180;
   liveTimer = window.setTimeout(() => {
     void loadContents(editor.value, fileName);
-  }, 180);
+  }, delay);
 }
 
 async function openFile() {
@@ -838,10 +918,13 @@ async function applySearchHit(hit: SearchHit) {
   input.value = suggestionLabel(hit);
   hideSearchResults();
   if (hit.nodeId) {
-    try {
-      graph = await invoke<GraphPayload>("reveal_node", { nodeId: hit.nodeId });
-    } catch {
-      // Keep the current graph if the node cannot be revealed.
+    if (graphReady || !isTreeMode()) {
+      try {
+        graph = await invoke<GraphPayload>("reveal_node", { nodeId: hit.nodeId });
+        graphReady = true;
+      } catch {
+        // Keep the current graph if the node cannot be revealed.
+      }
     }
   }
   await selectNode(hit.nodeId, hit.path);
@@ -985,11 +1068,13 @@ function bindInterface() {
   byId("center-view").onclick = centerView;
   byId("expand-all").onclick = async () => {
     graph = await invoke("expand_all", { expanded: true });
-    renderGraph();
+    graphReady = true;
+    if (!isTreeMode()) renderGraph();
   };
   byId("collapse-all").onclick = async () => {
     graph = await invoke("expand_all", { expanded: false });
-    renderGraph();
+    graphReady = true;
+    if (!isTreeMode()) renderGraph();
   };
   byId("theme-toggle").onclick = () => {
     const root = document.documentElement;
@@ -1007,7 +1092,7 @@ function bindInterface() {
   byId("export-svg").onclick = exportSvg;
   byId("export-png").onclick = () => void exportPng();
   byId("modal-close").onclick = () => modal.classList.add("hidden");
-  byId("copy-result").onclick = () => void copyText(modalBody.textContent ?? "", "JSON");
+  byId("copy-result").onclick = () => void copyText(modalBody.textContent ?? "", "代码");
   byId("copy-jsonpath").onclick = () => void copyText(selectedPath, "JSONPath");
   byId("copy-jmespath").onclick = () => void copyText(toJmesPath(selectedPath), "JMESPath");
   const pathModeMenu = byId("path-mode-menu");
@@ -1052,7 +1137,8 @@ function bindInterface() {
   document.querySelectorAll<HTMLButtonElement>("[data-direction]").forEach((button) => {
     button.onclick = async () => {
       graph = await invoke("set_layout", { direction: button.dataset.direction as Direction });
-      renderGraph();
+      graphReady = true;
+      if (!isTreeMode()) renderGraph();
     };
   });
   document.querySelectorAll<HTMLButtonElement>("[data-tool]").forEach((button) => {

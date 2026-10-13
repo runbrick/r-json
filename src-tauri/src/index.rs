@@ -1,5 +1,5 @@
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::model::{TreeNode, ValueKind, MAX_TREE_CHILDREN};
 
@@ -70,7 +70,36 @@ impl DocumentIndex {
         let Some(root) = self.records.get(root_id as usize) else {
             return Vec::new();
         };
-        vec![to_tree(root, &self.records, 0)]
+        vec![to_tree_shallow(root, &self.records)]
+    }
+
+    pub fn children_of(&self, parent_id: u32) -> Vec<TreeNode> {
+        let Some(parent) = self.records.get(parent_id as usize) else {
+            return Vec::new();
+        };
+        parent
+            .children
+            .iter()
+            .take(MAX_TREE_CHILDREN)
+            .filter_map(|child_id| self.records.get(*child_id as usize))
+            .map(|child| to_tree_leaf(child))
+            .collect()
+    }
+
+    pub fn tree_with_path(&self, node_id: u32) -> Vec<TreeNode> {
+        if self.records.get(node_id as usize).is_none() {
+            return self.subtree(0);
+        }
+        let mut path_ids = HashSet::new();
+        let mut cursor = Some(node_id);
+        while let Some(id) = cursor {
+            path_ids.insert(id);
+            cursor = self.records.get(id as usize).and_then(|record| record.parent);
+        }
+        let Some(root) = self.records.first() else {
+            return Vec::new();
+        };
+        vec![to_tree_along(root, &self.records, &path_ids)]
     }
 }
 
@@ -142,14 +171,22 @@ fn walk(
 }
 
 fn assign_text_offsets(records: &mut [Record], text: &str) {
+    let mut cursor = 0usize;
     for record in records.iter_mut() {
         let token = record.key.as_deref().unwrap_or(&record.preview);
         if token.is_empty() {
             continue;
         }
-        if let Some(offset) = text.find(token) {
+        let haystack = if cursor < text.len() { &text[cursor..] } else { text };
+        if let Some(relative) = haystack.find(token) {
+            let offset = cursor + relative;
             record.byte_start = offset as u32;
             record.byte_end = (offset + token.len()) as u32;
+            cursor = offset + token.len();
+        } else if let Some(offset) = text.find(token) {
+            record.byte_start = offset as u32;
+            record.byte_end = (offset + token.len()) as u32;
+            cursor = offset + token.len();
         }
     }
 }
@@ -221,8 +258,7 @@ fn parse_quoted(text: &str) -> Option<(&str, &str)> {
     None
 }
 
-fn to_tree(record: &Record, records: &[Record], depth: usize) -> TreeNode {
-    let limit = if depth < 2 { MAX_TREE_CHILDREN } else { 80 };
+fn to_tree_leaf(record: &Record) -> TreeNode {
     TreeNode {
         id: record.id,
         key: record.key.clone(),
@@ -230,14 +266,54 @@ fn to_tree(record: &Record, records: &[Record], depth: usize) -> TreeNode {
         preview: record.preview.clone(),
         child_count: record.child_count,
         path: record.path.clone(),
-        children: record
-            .children
-            .iter()
-            .take(limit)
-            .filter_map(|child_id| records.get(*child_id as usize))
-            .map(|child| to_tree(child, records, depth + 1))
-            .collect(),
-        truncated_children: record.children.len() > limit,
+        children: Vec::new(),
+        truncated_children: false,
+    }
+}
+
+fn to_tree_shallow(record: &Record, records: &[Record]) -> TreeNode {
+    let children = record
+        .children
+        .iter()
+        .take(MAX_TREE_CHILDREN)
+        .filter_map(|child_id| records.get(*child_id as usize))
+        .map(to_tree_leaf)
+        .collect::<Vec<_>>();
+    TreeNode {
+        id: record.id,
+        key: record.key.clone(),
+        kind: record.kind,
+        preview: record.preview.clone(),
+        child_count: record.child_count,
+        path: record.path.clone(),
+        truncated_children: record.children.len() > children.len(),
+        children,
+    }
+}
+
+fn to_tree_along(record: &Record, records: &[Record], path_ids: &HashSet<u32>) -> TreeNode {
+    let children = record
+        .children
+        .iter()
+        .take(MAX_TREE_CHILDREN)
+        .filter_map(|child_id| records.get(*child_id as usize))
+        .map(|child| {
+            if path_ids.contains(&child.id) {
+                to_tree_along(child, records, path_ids)
+            } else {
+                to_tree_leaf(child)
+            }
+        })
+        .collect::<Vec<_>>();
+    TreeNode {
+        id: record.id,
+        key: record.key.clone(),
+        kind: record.kind,
+        preview: record.preview.clone(),
+        child_count: record.child_count,
+        path: record.path.clone(),
+        truncated_children: record.children.len() > children.len(),
+        children,
     }
 }
 

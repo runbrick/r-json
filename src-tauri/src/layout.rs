@@ -25,16 +25,7 @@ pub fn layout(
     direction: LayoutDirection,
 ) -> GraphPayload {
     if records.is_empty() {
-        return GraphPayload {
-            nodes: Vec::new(),
-            edges: Vec::new(),
-            total_nodes: 0,
-            truncated: false,
-            bounds: Bounds {
-                width: 800.0,
-                height: 600.0,
-            },
-        };
+        return empty_graph(0);
     }
 
     let mut cards = Vec::new();
@@ -319,5 +310,18 @@ fn orient(nodes: &mut [GraphNode], direction: LayoutDirection, width: f32) {
                 }
             }
         }
+    }
+}
+
+pub fn empty_graph(total_nodes: usize) -> GraphPayload {
+    GraphPayload {
+        nodes: Vec::new(),
+        edges: Vec::new(),
+        total_nodes,
+        truncated: false,
+        bounds: Bounds {
+            width: 800.0,
+            height: 600.0,
+        },
     }
 }

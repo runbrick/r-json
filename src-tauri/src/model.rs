@@ -4,7 +4,7 @@ pub use crate::tree_node::TreeNode;
 
 pub const MAX_RENDER_NODES: usize = 8_000;
 pub const MAX_SEARCH_HITS: usize = 400;
-pub const MAX_TREE_CHILDREN: usize = 2_000;
+pub const MAX_TREE_CHILDREN: usize = 400;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

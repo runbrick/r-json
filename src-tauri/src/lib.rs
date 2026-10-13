@@ -119,6 +119,28 @@ fn reveal_node(state: State<AppState>, node_id: u32) -> Result<GraphPayload, Str
 }
 
 #[tauri::command]
+fn tree_children(state: State<AppState>, parent_id: u32) -> Result<Vec<crate::model::TreeNode>, String> {
+    state
+        .session
+        .lock()
+        .expect("session lock")
+        .as_ref()
+        .map(|session| session.tree_children(parent_id))
+        .ok_or_else(|| "No document is loaded".to_string())
+}
+
+#[tauri::command]
+fn reveal_tree(state: State<AppState>, node_id: u32) -> Result<Vec<crate::model::TreeNode>, String> {
+    state
+        .session
+        .lock()
+        .expect("session lock")
+        .as_ref()
+        .map(|session| session.reveal_tree(node_id))
+        .ok_or_else(|| "No document is loaded".to_string())
+}
+
+#[tauri::command]
 fn search_document(
     state: State<AppState>,
     query: String,
@@ -246,6 +268,8 @@ pub fn run() {
             toggle_node,
             expand_all,
             reveal_node,
+            tree_children,
+            reveal_tree,
             search_document,
             node_detail,
             text_window,

@@ -7,8 +7,8 @@ use serde_json::Value;
 use crate::index::{count_kinds, DocumentIndex, Record};
 use crate::layout;
 use crate::model::{
-    DocumentStats, FormatKind, LayoutDirection, LoadedDocument, NodeDetail, SearchHit, TextWindow,
-    MAX_SEARCH_HITS,
+    DocumentStats, FormatKind, GraphPayload, LayoutDirection, LoadedDocument, NodeDetail,
+    SearchHit, TextWindow, TreeNode, MAX_SEARCH_HITS,
 };
 use crate::parse::{detect_format, parse_to_json};
 use crate::query::{jmes_path_located, json_path_located, LocatedValue};
@@ -30,10 +30,11 @@ impl Session {
         let value = parse_to_json(format, contents)?;
         let pretty = serde_json::to_string_pretty(&value).map_err(|error| error.to_string())?;
         let index = DocumentIndex::build(&value, &pretty);
+        let collapsed = default_collapsed(&index.records);
         Ok(Self {
             value,
             index,
-            collapsed: HashSet::new(),
+            collapsed,
             direction: LayoutDirection::Right,
             format,
             file_name,
@@ -43,7 +44,6 @@ impl Session {
 
     pub fn snapshot(&self) -> LoadedDocument {
         let started = Instant::now();
-        let graph = layout::layout(&self.index.records, &self.collapsed, self.direction);
         let counts = count_kinds(&self.index.records);
         LoadedDocument {
             format: self.format,
@@ -67,10 +67,18 @@ impl Session {
                 parse_ms: self.parse_ms,
                 layout_ms: started.elapsed().as_millis() as u32,
             },
-            graph,
+            graph: layout::empty_graph(self.index.records.len()),
             tree: self.index.subtree(0),
             error: None,
         }
+    }
+
+    pub fn tree_children(&self, parent_id: u32) -> Vec<TreeNode> {
+        self.index.children_of(parent_id)
+    }
+
+    pub fn reveal_tree(&self, node_id: u32) -> Vec<TreeNode> {
+        self.index.tree_with_path(node_id)
     }
 
     pub fn search(&self, query: &str) -> Vec<SearchHit> {
@@ -182,9 +190,23 @@ impl Session {
         }
     }
 
-    pub fn graph(&self) -> crate::model::GraphPayload {
-        crate::layout::layout(&self.index.records, &self.collapsed, self.direction)
+    pub fn graph(&self) -> GraphPayload {
+        layout::layout(&self.index.records, &self.collapsed, self.direction)
     }
+}
+
+fn default_collapsed(records: &[crate::index::Record]) -> HashSet<u32> {
+    records
+        .iter()
+        .filter(|record| {
+            record.depth >= 2
+                && matches!(
+                    record.kind,
+                    crate::model::ValueKind::Object | crate::model::ValueKind::Array
+                )
+        })
+        .map(|record| record.id)
+        .collect()
 }
 
 fn preview_value(value: &Value) -> String {
