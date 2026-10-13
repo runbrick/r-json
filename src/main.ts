@@ -1380,7 +1380,14 @@ function bindInterface() {
     dragging = false;
   });
 
+  window.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+  });
   window.addEventListener("keydown", (event) => {
+    if (event.key === "F7") {
+      event.preventDefault();
+      return;
+    }
     if (event.ctrlKey && event.key.toLowerCase() === "o") { event.preventDefault(); void openFile(); }
     if (event.ctrlKey && event.key.toLowerCase() === "s") { event.preventDefault(); void saveFile(); }
     if (event.ctrlKey && event.key.toLowerCase() === "n") { event.preventDefault(); resetWorkspace(); }
