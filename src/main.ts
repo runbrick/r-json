@@ -25,11 +25,14 @@ import {
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { indentationMarkers } from "@replit/codemirror-indentation-markers";
+import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updater";
 
 type ValueKind = "object" | "array" | "string" | "number" | "boolean" | "null";
 
@@ -1407,6 +1410,7 @@ function bindInterface() {
     if (event.key === "Escape") {
       modal.classList.add("hidden");
       schemaModal.classList.add("hidden");
+      byId("update-modal").classList.add("hidden");
     }
   });
 
@@ -1430,8 +1434,178 @@ function bindInterface() {
   });
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatAppVersion(version: string): string {
+  return version.startsWith("v") ? version : `v${version}`;
+}
+
+function bindUpdater() {
+  const updateModal = byId("update-modal");
+  const updateStatus = byId("update-status");
+  const updateNotes = byId("update-notes");
+  const currentVersionLabel = byId("update-current-version");
+  const latestVersionLabel = byId("update-latest-version");
+  const progressWrap = byId("update-progress-wrap");
+  const progressBar = byId<HTMLProgressElement>("update-progress");
+  const progressLabel = byId("update-progress-label");
+  const installButton = byId<HTMLButtonElement>("update-install");
+  const checkButton = byId<HTMLButtonElement>("update-check");
+  const laterButton = byId<HTMLButtonElement>("update-later");
+  const versionBadge = byId("app-version");
+
+  let pendingUpdate: Update | null = null;
+  let checking = false;
+  let installing = false;
+  let appVersion = versionBadge.textContent?.replace(/^v/, "") ?? "0.1.0";
+
+  const closeUpdateModal = () => {
+    if (installing) return;
+    updateModal.classList.add("hidden");
+  };
+
+  const setBusy = (busy: boolean) => {
+    checkButton.disabled = busy;
+    installButton.disabled = busy || !pendingUpdate;
+  };
+
+  const showUpdateModal = () => {
+    updateModal.classList.remove("hidden");
+  };
+
+  const resetProgress = () => {
+    progressWrap.classList.add("hidden");
+    progressBar.removeAttribute("value");
+    progressLabel.textContent = "";
+  };
+
+  const applyVersionLabels = (latest?: string) => {
+    currentVersionLabel.textContent = formatAppVersion(appVersion);
+    latestVersionLabel.textContent = latest ? formatAppVersion(latest) : "—";
+    versionBadge.textContent = formatAppVersion(appVersion);
+  };
+
+  const checkForUpdates = async (userRequested: boolean) => {
+    if (checking || installing) return;
+    checking = true;
+    setBusy(true);
+    if (userRequested) {
+      showUpdateModal();
+      updateStatus.textContent = "正在检查 GitHub 上的新版本…";
+      updateNotes.textContent = "";
+      installButton.classList.add("hidden");
+      resetProgress();
+    }
+    try {
+      const update = await check();
+      if (pendingUpdate) {
+        await pendingUpdate.close().catch(() => undefined);
+        pendingUpdate = null;
+      }
+      if (!update) {
+        applyVersionLabels();
+        if (userRequested) {
+          updateStatus.textContent = "当前已是最新版本。";
+          updateNotes.textContent = "";
+          installButton.classList.add("hidden");
+        }
+        return;
+      }
+      pendingUpdate = update;
+      applyVersionLabels(update.version);
+      updateStatus.textContent = `发现新版本 ${formatAppVersion(update.version)}。`;
+      updateNotes.textContent = update.body?.trim() || "此版本没有附带更新说明。";
+      installButton.classList.remove("hidden");
+      installButton.disabled = false;
+      showUpdateModal();
+    } catch (error) {
+      applyVersionLabels();
+      if (userRequested) {
+        updateStatus.textContent = "检查更新失败。";
+        updateNotes.textContent = String(error);
+        installButton.classList.add("hidden");
+        showUpdateModal();
+      }
+    } finally {
+      checking = false;
+      setBusy(false);
+    }
+  };
+
+  const installPendingUpdate = async () => {
+    if (!pendingUpdate || installing) return;
+    installing = true;
+    setBusy(true);
+    progressWrap.classList.remove("hidden");
+    progressBar.removeAttribute("value");
+    progressLabel.textContent = "准备下载…";
+    updateStatus.textContent = `正在下载 ${formatAppVersion(pendingUpdate.version)}…`;
+    let downloaded = 0;
+    let contentLength: number | undefined;
+    try {
+      await pendingUpdate.downloadAndInstall((event: DownloadEvent) => {
+        if (event.event === "Started") {
+          contentLength = event.data.contentLength;
+          downloaded = 0;
+          if (contentLength) {
+            progressBar.max = contentLength;
+            progressBar.value = 0;
+          }
+          progressLabel.textContent = contentLength
+            ? `0 / ${formatBytes(contentLength)}`
+            : "开始下载…";
+          return;
+        }
+        if (event.event === "Progress") {
+          downloaded += event.data.chunkLength;
+          if (contentLength) {
+            progressBar.max = contentLength;
+            progressBar.value = downloaded;
+            progressLabel.textContent = `${formatBytes(downloaded)} / ${formatBytes(contentLength)}`;
+          } else {
+            progressLabel.textContent = `已下载 ${formatBytes(downloaded)}`;
+          }
+          return;
+        }
+        progressBar.value = contentLength ?? downloaded;
+        progressLabel.textContent = "下载完成，正在安装…";
+      });
+      updateStatus.textContent = "更新已安装，即将重启应用。";
+      progressLabel.textContent = "安装完成";
+      await relaunch();
+    } catch (error) {
+      installing = false;
+      setBusy(false);
+      updateStatus.textContent = "更新失败。";
+      progressLabel.textContent = String(error);
+    }
+  };
+
+  byId("check-update").onclick = () => void checkForUpdates(true);
+  checkButton.onclick = () => void checkForUpdates(true);
+  laterButton.onclick = closeUpdateModal;
+  byId("update-modal-close").onclick = closeUpdateModal;
+  installButton.onclick = () => void installPendingUpdate();
+
+  void getVersion().then((version) => {
+    appVersion = version;
+    applyVersionLabels();
+  }).catch(() => {
+    applyVersionLabels();
+  });
+
+  window.setTimeout(() => {
+    void checkForUpdates(false);
+  }, 2500);
+}
+
 bindTitlebar();
 bindInterface();
+bindUpdater();
 applyCamera();
 applyView("tree");
 createSourceEditor();

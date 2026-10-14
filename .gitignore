@@ -24,3 +24,8 @@ dist-ssr
 *.sw?
 
 .vscode
+
+# Tauri updater signing keys — never commit these
+*.key
+*.key.pub
+*.sig

@@ -58,6 +58,54 @@ npm run tauri dev
 npm run tauri build
 ```
 
+## 自动更新与 GitHub 发版
+
+已安装的应用会检查 [GitHub Releases](https://github.com/runbrick/r-json/releases) 是否有新版本，下载签名后的安装包、校验后自动安装。
+
+### 一次性准备
+
+1. 如果还没有更新签名密钥，先生成一对：
+
+```powershell
+npm run tauri signer generate -- -w "$HOME\.tauri\r-json.key"
+```
+
+2. 打开 GitHub 仓库 **Settings → Secrets and variables → Actions**，添加：
+
+| Secret | 值 |
+| --- | --- |
+| `TAURI_SIGNING_PRIVATE_KEY` | `r-json.key` 的完整内容 |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 密钥密码；没有密码就留空 |
+
+私钥务必另外备份。私钥丢了，已经装过的旧版本就没法再收到签名更新。
+
+3. 在 **Settings → Actions → General → Workflow permissions** 里打开 **Read and write permissions**，这样工作流才能创建 Release。
+
+公钥已经写在 `src-tauri/tauri.conf.json` 里。私钥不要提交到 git。
+
+仓库需要是公开的，否则应用无法匿名下载 `latest.json`。
+
+### 发布一个新版本
+
+版本号以 `package.json` 为准。`tauri.conf.json` 会读取它，`npm version` 还会同步 `src-tauri/Cargo.toml`。
+
+```powershell
+npm version 0.2.0
+git push origin master
+git push origin v0.2.0
+```
+
+也可以用 `npm version patch`、`npm version minor` 或 `npm version major`。这条命令会改 `package.json`、同步 Cargo 文件、提交，并打上 `v*` tag。
+
+推送 `v*` tag 会触发 `.github/workflows/release.yml`。它会构建 Windows / macOS / Linux 安装包，签名更新文件，创建 GitHub Release，并上传 `latest.json`。
+
+工作流跑完后：
+
+1. 打开 Release 页面，确认安装包和 `latest.json` 都在附件里。
+2. 安装旧版本，然后用 **帮助 → 检查更新**，或启动几秒后等待自动检查。
+
+也可以在 **Actions** 页手动运行 **Publish**。版本号仍然以 `package.json` 为准。
+
 ## 鸣谢
 
 R JSON 离不开这些开源项目：

@@ -58,6 +58,54 @@ Release builds use LTO and native optimizations:
 npm run tauri build
 ```
 
+## Auto-update and GitHub Releases
+
+Installed apps check [GitHub Releases](https://github.com/runbrick/r-json/releases) for a newer version, download the signed installer, verify it, and install it.
+
+### One-time setup
+
+1. Generate an updater signing key if you do not already have one:
+
+```powershell
+npm run tauri signer generate -- -w "$HOME\.tauri\r-json.key"
+```
+
+2. In the GitHub repo, open **Settings → Secrets and variables → Actions** and add:
+
+| Secret | Value |
+| --- | --- |
+| `TAURI_SIGNING_PRIVATE_KEY` | Full contents of `r-json.key` |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Key password, or leave empty if the key has none |
+
+Keep the private key somewhere safe. If it is lost, already-installed copies cannot receive signed updates.
+
+3. In **Settings → Actions → General → Workflow permissions**, allow **Read and write permissions** so the workflow can create releases.
+
+The matching public key is already in `src-tauri/tauri.conf.json`. Do not put the private key in git.
+
+The repository should be public, or the updater cannot download `latest.json` without extra authentication.
+
+### Publish a version
+
+`package.json` is the single source of truth. `tauri.conf.json` reads it, and `npm version` also syncs `src-tauri/Cargo.toml`.
+
+```powershell
+npm version 0.2.0
+git push origin master
+git push origin v0.2.0
+```
+
+`npm version patch`, `npm version minor`, or `npm version major` also work. That command updates `package.json`, syncs the Cargo files, commits, and creates the `v*` tag.
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`. It builds Windows, macOS, and Linux installers, signs the updater artifacts, creates a GitHub Release, and uploads `latest.json`.
+
+After the workflow finishes:
+
+1. Open the release page and confirm the installers plus `latest.json` are attached.
+2. Install the previous version, then use **Help → Check for updates**, or wait a few seconds after launch.
+
+You can also run the workflow by hand from the **Actions** tab (**Publish → Run workflow**). It still uses the version in `package.json`.
+
 ## Acknowledgements
 
 R JSON stands on the shoulders of these open-source projects:

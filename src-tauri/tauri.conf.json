@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "R JSON",
-  "version": "0.1.0",
+  "version": "../package.json",
   "identifier": "com.rjson.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -30,6 +30,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -40,5 +41,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ1NTZDQ0VBMDJEOTQ0RDAKUldUUVJOa0M2c3hXUlNCb3NaRC81NTFIdXhXaG5XdDN2QnRyZzR0Nm9VYlhQRlhXK2VsdEhUUFIK",
+      "endpoints": [
+        "https://github.com/runbrick/r-json/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

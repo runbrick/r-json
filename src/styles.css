@@ -689,6 +689,75 @@ button:disabled { opacity: 0.4; cursor: default; }
   width: min(1080px, calc(100vw - 48px));
   height: min(760px, calc(100vh - 48px));
 }
+.update-modal {
+  width: min(520px, calc(100vw - 48px));
+  height: auto;
+  max-height: min(640px, calc(100vh - 48px));
+}
+.update-body {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+  padding: 0 14px 14px;
+}
+.update-body p {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.update-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0;
+}
+.update-meta div {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--gutter);
+}
+.update-meta dt {
+  color: var(--faint);
+  font-size: 11px;
+}
+.update-meta dd {
+  margin: 4px 0 0;
+  font-weight: 600;
+}
+.update-notes {
+  min-height: 72px;
+  max-height: 180px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--gutter);
+  padding: 10px 12px;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.update-progress-wrap {
+  display: grid;
+  gap: 6px;
+}
+.update-progress-wrap progress {
+  width: 100%;
+  height: 8px;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--line);
+  accent-color: var(--accent);
+}
+.update-progress-wrap span {
+  color: var(--muted);
+  font-size: 12px;
+}
 .schema-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 0.7fr);
