@@ -362,19 +362,14 @@ function locateKeyRange(key: string, text: string): SourceRange | null {
 
 function applySourceRange(range: SourceRange | null, scroll = false) {
   if (!sourceEditor) return;
-  sourceEditor.dispatch({
-    effects: setSourceRange.of(range),
-  });
-  if (!range || !scroll) return;
-  const document = sourceEditor.state.doc;
-  const startLine = Math.max(1, range.startLine + 1);
-  const endLine = Math.min(document.lines, range.endLine + 1);
-  const from = document.line(startLine).from;
-  const to = document.line(endLine).to;
-  sourceEditor.dispatch({
-    selection: { anchor: from, head: to },
-    scrollIntoView: true,
-  });
+  const effects: Array<StateEffect<unknown>> = [setSourceRange.of(range)];
+  if (range && scroll) {
+    const document = sourceEditor.state.doc;
+    const startLine = Math.max(1, range.startLine + 1);
+    const from = document.line(startLine).from;
+    effects.push(EditorView.scrollIntoView(from, { y: "center" }));
+  }
+  sourceEditor.dispatch({ effects });
 }
 
 function scheduleLiveParse() {
