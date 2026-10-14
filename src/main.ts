@@ -9,7 +9,7 @@ import {
   syntaxHighlighting,
   HighlightStyle,
 } from "@codemirror/language";
-import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
+import { highlightSelectionMatches } from "@codemirror/search";
 import { Compartment, EditorState, RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
 import { oneDark } from "@codemirror/theme-one-dark";
 import {
@@ -432,7 +432,16 @@ function createSourceEditor() {
         sourceRangeField,
         sourceEditorTheme,
         sourceTheme.of(sourceThemeExtensions()),
-        keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap, ...searchKeymap, indentWithTab]),
+        keymap.of([
+          { key: "Mod-f", run: () => { byId<HTMLInputElement>("search").focus(); return true; } },
+          { key: "Mod-g", run: () => true },
+          { key: "Shift-Mod-g", run: () => true },
+          { key: "Mod-h", run: () => true },
+          ...defaultKeymap,
+          ...historyKeymap,
+          ...foldKeymap,
+          indentWithTab,
+        ]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !skipLiveParse) scheduleLiveParse();
           if (!update.selectionSet || skipLiveParse || selectingFromSource) return;
@@ -574,6 +583,7 @@ function renderGraph() {
   for (const node of graph.nodes) {
     const card = document.createElement("article");
     card.className = `node${node.id === selectedId ? " selected" : ""}`;
+    card.dataset.nodeId = String(node.id);
     card.style.left = `${node.x}px`;
     card.style.top = `${node.y}px`;
     card.style.width = `${node.width}px`;
@@ -582,10 +592,10 @@ function renderGraph() {
     const rows = node.rows
       .map((row) => {
         const selected = row.nodeId === selectedId ? " selected" : "";
-        return `<div class="node-row${selected}" data-row-id="${row.nodeId}"><span class="key">${escapeHtml(row.key)}</span><span class="${escapeHtml(row.kind)}">${escapeHtml(row.value)}</span></div>`;
+        return `<div class="node-row${selected}" data-row-id="${row.nodeId}" data-kind="${escapeHtml(row.kind)}"><span class="key">${escapeHtml(row.key)}</span><span class="${escapeHtml(row.kind)}">${escapeHtml(row.value)}</span></div>`;
       })
       .join("");
-    card.innerHTML = `<header><button class="collapse">${node.collapsed ? "+" : "–"}</button><span>${escapeHtml(title)}</span><span class="preview">${escapeHtml(node.preview)}</span></header>${rows}`;
+    card.innerHTML = `<header><button class="collapse" type="button" title="双击展开或折叠">${node.collapsed ? "+" : "–"}</button><span>${escapeHtml(title)}</span><span class="preview">${escapeHtml(node.preview)}</span></header>${rows}`;
     card.addEventListener("pointerup", (event) => {
       if (panMoved) return;
       event.stopPropagation();
@@ -593,11 +603,21 @@ function renderGraph() {
       const rowId = row?.dataset.rowId ? Number(row.dataset.rowId) : node.id;
       void selectNode(rowId, row ? undefined : node.path);
     });
-    card.querySelector("button")?.addEventListener("click", async (event) => {
+    card.querySelector("button.collapse")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    card.addEventListener("dblclick", (event) => {
+      event.preventDefault();
       event.stopPropagation();
       if (panMoved) return;
-      graph = await invoke<GraphPayload>("toggle_node", { nodeId: node.id });
-      renderGraph();
+      const row = (event.target as HTMLElement).closest<HTMLElement>("[data-row-id]");
+      const rowKind = row?.dataset.kind;
+      const targetId = row
+        ? (rowKind === "object" || rowKind === "array" ? Number(row.dataset.rowId) : null)
+        : node.id;
+      if (targetId === null) return;
+      void toggleGraphNode(targetId);
     });
     fragment.append(card);
   }
@@ -736,10 +756,28 @@ async function expandTreeChildren(node: TreeNode, container: HTMLElement, expand
   container.replaceChildren(fragment);
 }
 
+function updateGraphSelection() {
+  if (!graphReady) return;
+  nodesLayer.querySelectorAll(".selected").forEach((element) => element.classList.remove("selected"));
+  if (selectedId === null) return;
+  const row = nodesLayer.querySelector<HTMLElement>(`[data-row-id="${selectedId}"]`);
+  if (row) {
+    row.classList.add("selected");
+    row.closest(".node")?.classList.add("selected");
+    return;
+  }
+  nodesLayer.querySelector(`[data-node-id="${selectedId}"]`)?.classList.add("selected");
+}
+
+async function toggleGraphNode(nodeId: number) {
+  graph = await invoke<GraphPayload>("toggle_node", { nodeId });
+  renderGraph();
+}
+
 async function selectNode(nodeId: number, path?: string, scrollSource = true) {
   selectedId = nodeId;
   if (path) selectedPath = path;
-  if (graphReady) renderGraph();
+  if (graphReady) updateGraphSelection();
   if (!treeContains(treeData, nodeId)) {
     try {
       treeData = await invoke<TreeNode[]>("reveal_tree", { nodeId });
@@ -1072,6 +1110,7 @@ async function applySearchHit(hit: SearchHit) {
       try {
         graph = await invoke<GraphPayload>("reveal_node", { nodeId: hit.nodeId });
         graphReady = true;
+        renderGraph();
       } catch {
         // Keep the current graph if the node cannot be revealed.
       }
