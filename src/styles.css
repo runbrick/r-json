@@ -884,6 +884,48 @@ button:disabled { opacity: 0.4; cursor: default; }
   gap: 12px;
   padding: 12px 14px;
 }
+.update-modal footer {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+}
+.update-modal footer .muted {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.update-modal footer .cluster {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.update-modal footer button {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.update-modal footer button:hover {
+  background: var(--hover);
+}
+.update-modal footer button.primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+.update-modal footer button.primary:hover {
+  filter: brightness(1.05);
+}
+.update-modal footer button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
 .modal pre {
   min-height: 0;
   margin: 0 14px 14px;
