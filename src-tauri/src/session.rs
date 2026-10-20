@@ -11,7 +11,7 @@ use crate::model::{
     SearchHit, TextWindow, TreeNode, MAX_SEARCH_HITS,
 };
 use crate::parse::{detect_format, parse_to_json};
-use crate::query::{jmes_path_located, json_path_located, LocatedValue};
+use crate::query::{jmes_path_prefix, json_path_prefix, LocatedValue};
 
 pub struct Session {
     pub value: Value,
@@ -91,8 +91,8 @@ impl Session {
             return Ok(Vec::new());
         }
         match mode {
-            "jmes" => Ok(self.hits_from_located(jmes_path_located(&self.value, expression)?)),
-            "json" | "path" => Ok(self.hits_from_located(json_path_located(&self.value, expression)?)),
+            "jmes" => Ok(self.hits_from_located(jmes_path_prefix(&self.value, expression)?)),
+            "json" | "path" => Ok(self.hits_from_located(json_path_prefix(&self.value, expression)?)),
             _ => Ok(self.text_search(expression)),
         }
     }

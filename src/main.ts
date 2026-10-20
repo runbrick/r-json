@@ -161,6 +161,8 @@ let fileName = "Untitled.json";
 let liveTimer = 0;
 let searchTimer = 0;
 let searchHits: SearchHit[] = [];
+let searchPool: SearchHit[] = [];
+let searchPoolQuery = "";
 let searchActiveIndex = -1;
 let searchRequestId = 0;
 let selectedPath = "$";
@@ -1046,9 +1048,57 @@ function hideSearchResults() {
   window.clearTimeout(searchTimer);
   searchRequestId += 1;
   searchHits = [];
+  searchPool = [];
+  searchPoolQuery = "";
   searchActiveIndex = -1;
   searchResults.classList.add("hidden");
   searchResults.replaceChildren();
+}
+
+function searchSegment(query: string): string {
+  const trimmed = query.trim();
+  const cut = Math.max(trimmed.lastIndexOf("."), trimmed.lastIndexOf("["), trimmed.lastIndexOf("]"));
+  return cut < 0 ? trimmed : trimmed.slice(cut + 1);
+}
+
+function searchStem(query: string): string {
+  const trimmed = query.trim();
+  const cut = Math.max(trimmed.lastIndexOf("."), trimmed.lastIndexOf("["), trimmed.lastIndexOf("]"));
+  return cut < 0 ? "" : trimmed.slice(0, cut + 1);
+}
+
+function filterSearchPool(query: string): SearchHit[] {
+  const segment = searchSegment(query).toLowerCase();
+  const typed = query.trim().toLowerCase();
+  if (!segment) return searchPool.slice(0, 80);
+  const ranked = searchPool.filter((hit) => {
+    const key = hit.key?.toLowerCase() ?? "";
+    return key.startsWith(segment) || suggestionLabel(hit).toLowerCase().startsWith(typed);
+  });
+  ranked.sort((left, right) => {
+    const leftKey = left.key ?? suggestionLabel(left);
+    const rightKey = right.key ?? suggestionLabel(right);
+    return leftKey.length - rightKey.length || leftKey.localeCompare(rightKey);
+  });
+  return ranked.slice(0, 80);
+}
+
+function canFilterLocally(query: string): boolean {
+  if (searchPool.length === 0 || !searchPoolQuery) return false;
+  const current = query.trim();
+  const pooled = searchPoolQuery.trim();
+  if (searchStem(current) !== searchStem(pooled)) return false;
+  const previous = searchSegment(pooled).toLowerCase();
+  const next = searchSegment(current).toLowerCase();
+  if (!next.startsWith(previous)) return false;
+  // A full page may be truncated. Ask the index again instead of hiding matches.
+  return searchPool.length < 400 || next === previous;
+}
+
+function showSearchHits(hits: SearchHit[]) {
+  searchHits = hits;
+  searchActiveIndex = searchHits.length > 0 ? 0 : -1;
+  renderSearchResults();
 }
 
 function renderSearchResults() {
@@ -1128,20 +1178,27 @@ async function commitSearchFromInput() {
 }
 
 async function search(query: string) {
-  const requestId = ++searchRequestId;
-  if (!query.trim()) {
+  const trimmed = query.trim();
+  if (!trimmed) {
     hideSearchResults();
     return;
   }
+  if (canFilterLocally(trimmed)) {
+    showSearchHits(filterSearchPool(trimmed));
+    return;
+  }
+  const requestId = ++searchRequestId;
   try {
-    const hits = await invoke<SearchHit[]>("search_document", { query, mode: pathMode });
+    const hits = await invoke<SearchHit[]>("search_document", { query: trimmed, mode: pathMode });
     if (requestId !== searchRequestId) return;
-    searchHits = hits.slice(0, 80);
-    searchActiveIndex = searchHits.length > 0 ? 0 : -1;
-    renderSearchResults();
+    searchPool = hits;
+    searchPoolQuery = trimmed;
+    showSearchHits(hits.slice(0, 80));
   } catch {
     if (requestId !== searchRequestId) return;
     searchHits = [];
+    searchPool = [];
+    searchPoolQuery = "";
     searchActiveIndex = -1;
     searchResults.classList.add("hidden");
     searchResults.replaceChildren();
