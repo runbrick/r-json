@@ -12,17 +12,8 @@ import {
 import { highlightSelectionMatches } from "@codemirror/search";
 import { Compartment, EditorState, RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
 import { oneDark } from "@codemirror/theme-one-dark";
-import {
-  Decoration,
-  type DecorationSet,
-  drawSelection,
-  dropCursor,
-  EditorView,
-  highlightActiveLine,
-  highlightActiveLineGutter,
-  keymap,
-  lineNumbers,
-} from "@codemirror/view";
+import { Decoration, type DecorationSet, drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
+import { diffLines, type LineSpan } from "./line-diff";
 import { tags } from "@lezer/highlight";
 import { indentationMarkers } from "@replit/codemirror-indentation-markers";
 import { getVersion } from "@tauri-apps/api/app";
@@ -172,8 +163,14 @@ let skipLiveParse = false;
 let loadRequestId = 0;
 let graphReady = false;
 let sourceEditor: EditorView | null = null;
+let compareRightView: EditorView | null = null;
+let compareText = "";
+let compareFileName = "";
+let lastStructureView: "graph" | "tree" = "tree";
+let compareTimer = 0;
 let selectingFromSource = false;
 const sourceTheme = new Compartment();
+const sourceDiffMarks = new Compartment();
 const setSourceRange = StateEffect.define<SourceRange | null>();
 const sourceWrapMark = Decoration.mark({ class: "cm-source-wrap" });
 const sourceRangeField = StateField.define<DecorationSet>({
@@ -261,6 +258,8 @@ function resetWorkspace() {
   graphReady = false;
   selectedId = null;
   selectedPath = "$";
+  compareText = "";
+  compareFileName = "";
   hideSearchResults();
   nodesLayer.replaceChildren();
   edges.innerHTML = "";
@@ -270,6 +269,8 @@ function resetWorkspace() {
   validity.classList.remove("error");
   validity.title = "";
   stats.textContent = "未加载";
+  setCompareLabel();
+  renderCompare();
   setEditorText("", false);
 }
 
@@ -427,6 +428,7 @@ function createSourceEditor() {
           },
         }),
         sourceRangeField,
+        sourceDiffMarks.of([]),
         sourceEditorTheme,
         sourceTheme.of(sourceThemeExtensions()),
         keymap.of([
@@ -441,6 +443,7 @@ function createSourceEditor() {
         ]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !skipLiveParse) scheduleLiveParse();
+          if (update.docChanged) scheduleCompare();
           if (!update.selectionSet || skipLiveParse || selectingFromSource) return;
           const line = update.state.doc.lineAt(update.state.selection.main.head);
           void selectFromSourceLine(line.number);
@@ -482,13 +485,163 @@ function minifyEscapeJson(value: string): string {
   }
 }
 
-function applyView(view: "graph" | "tree") {
+function applyView(view: "graph" | "tree" | "diff") {
   const workspace = byId("workspace");
+  if (view !== "diff") lastStructureView = view;
+  workspace.classList.toggle("compare-mode", view === "diff");
   workspace.classList.toggle("tree-mode", view === "tree");
+  byId("diff-pane").classList.toggle("hidden", view !== "diff");
   document.querySelectorAll<HTMLButtonElement>("[data-view]").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === view);
   });
   if (view === "graph") void ensureGraphRendered();
+  if (view === "diff") {
+    renderCompare();
+    window.requestAnimationFrame(() => {
+      sourceEditor?.requestMeasure();
+      compareRightView?.requestMeasure();
+    });
+  } else {
+    paintSourceDiff([]);
+  }
+}
+
+function scheduleCompare() {
+  if (!byId("workspace").classList.contains("compare-mode")) return;
+  window.clearTimeout(compareTimer);
+  compareTimer = window.setTimeout(renderCompare, 120);
+}
+
+function compareExtensions() {
+  const marks = new Compartment();
+  const theme = new Compartment();
+  return {
+    marks,
+    theme,
+    extensions: [
+      lineNumbers(),
+      highlightActiveLineGutter(),
+      highlightActiveLine(),
+      drawSelection(),
+      json(),
+      indentUnit.of("  "),
+      syntaxHighlighting(jsonHighlightStyle),
+      sourceEditorTheme,
+      theme.of(sourceThemeExtensions()),
+      EditorState.readOnly.of(true),
+      EditorView.editable.of(false),
+      marks.of([]),
+    ],
+  };
+}
+
+const rightCompare = compareExtensions();
+
+function compareView(parent: HTMLElement, bundle: ReturnType<typeof compareExtensions>): EditorView {
+  return new EditorView({
+    parent,
+    state: EditorState.create({
+      doc: "",
+      extensions: bundle.extensions,
+    }),
+  });
+}
+
+function ensureCompareViews() {
+  if (compareRightView) return;
+  compareRightView = compareView(byId("diff-right"), rightCompare);
+  let syncingScroll = false;
+  const sync = (source: EditorView, target: EditorView) => {
+    source.scrollDOM.addEventListener("scroll", () => {
+      if (syncingScroll) return;
+      syncingScroll = true;
+      target.scrollDOM.scrollTop = source.scrollDOM.scrollTop;
+      target.scrollDOM.scrollLeft = source.scrollDOM.scrollLeft;
+      syncingScroll = false;
+    });
+  };
+  const left = createSourceEditor();
+  sync(left, compareRightView);
+  sync(compareRightView, left);
+}
+
+function lineDecorations(view: EditorView, spans: LineSpan[], side: "left" | "right"): DecorationSet {
+  const mark = Decoration.line({ class: side === "left" ? "cm-line-removed" : "cm-line-added" });
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const span of spans) {
+    const start = side === "left" ? span.leftStart : span.rightStart;
+    const count = side === "left" ? span.leftCount : span.rightCount;
+    for (let index = 0; index < count; index += 1) {
+      const lineNumber = start + index + 1;
+      if (lineNumber < 1 || lineNumber > view.state.doc.lines) continue;
+      builder.add(view.state.doc.line(lineNumber).from, view.state.doc.line(lineNumber).from, mark);
+    }
+  }
+  return builder.finish();
+}
+
+function setCompareDocument(view: EditorView, text: string, spans: LineSpan[]) {
+  view.dispatch({
+    changes: { from: 0, to: view.state.doc.length, insert: text },
+  });
+  view.dispatch({
+    effects: rightCompare.marks.reconfigure(EditorView.decorations.of(lineDecorations(view, spans, "right"))),
+  });
+}
+
+function paintSourceDiff(spans: LineSpan[]) {
+  const view = sourceEditor;
+  if (!view) return;
+  view.dispatch({
+    effects: sourceDiffMarks.reconfigure(
+      EditorView.decorations.of(byId("workspace").classList.contains("compare-mode")
+        ? lineDecorations(view, spans, "left")
+        : Decoration.none),
+    ),
+  });
+}
+
+function setCompareLabel() {
+  const label = byId("diff-file");
+  label.textContent = compareFileName || "未加载对比文件";
+}
+
+function renderCompare() {
+  ensureCompareViews();
+  setCompareLabel();
+  if (!sourceEditor || !compareRightView) return;
+  const left = currentEditorText();
+  const spans = compareText ? diffLines(left, compareText) : [];
+  paintSourceDiff(spans);
+  setCompareDocument(compareRightView, compareText, spans);
+  const removed = spans.reduce((total, span) => total + span.leftCount, 0);
+  const added = spans.reduce((total, span) => total + span.rightCount, 0);
+  const summary = byId("diff-summary");
+  if (!compareText) {
+    summary.textContent = "";
+    return;
+  }
+  summary.innerHTML = spans.length === 0
+    ? "内容一致"
+    : `<span class="removed">-${removed}</span> <span class="added">+${added}</span>`;
+}
+
+async function loadCompareFile(text: string, name: string) {
+  compareText = text;
+  compareFileName = name;
+  applyView("diff");
+}
+
+function openCompareFile() {
+  const picker = document.createElement("input");
+  picker.type = "file";
+  picker.accept = ".json,.jsonc,.txt";
+  picker.onchange = async () => {
+    const file = picker.files?.[0];
+    if (!file) return;
+    await loadCompareFile(await file.text(), file.name);
+  };
+  picker.click();
 }
 
 async function ensureGraphRendered() {
@@ -546,7 +699,8 @@ async function loadContents(
     if (requestId !== loadRequestId) return;
     renderTree(loaded.tree);
     showValid(loaded);
-    if (!isTreeMode()) await ensureGraphRendered();
+    scheduleCompare();
+    if (!isTreeMode() && !byId("workspace").classList.contains("compare-mode")) await ensureGraphRendered();
   } catch (error) {
     if (requestId !== loadRequestId) return;
     showError(String(error));
@@ -1321,6 +1475,7 @@ function bindInterface() {
     sourceEditor?.dispatch({
       effects: sourceTheme.reconfigure(sourceThemeExtensions()),
     });
+    compareRightView?.dispatch({ effects: rightCompare.theme.reconfigure(sourceThemeExtensions()) });
     syncThemeToggle();
   };
   syncThemeToggle();
@@ -1386,8 +1541,13 @@ function bindInterface() {
   };
 
   document.querySelectorAll<HTMLButtonElement>("[data-view]").forEach((button) => {
-    button.onclick = () => applyView(button.dataset.view as "graph" | "tree");
+    button.onclick = () => applyView(button.dataset.view as "graph" | "tree" | "diff");
   });
+  byId("diff-open").onclick = () => openCompareFile();
+  byId("diff-paste").onclick = async () => {
+    await loadCompareFile(await navigator.clipboard.readText(), "剪贴板");
+  };
+  byId("diff-back").onclick = () => applyView(lastStructureView);
   document.querySelectorAll<HTMLButtonElement>("[data-tool]").forEach((button) => {
     button.onclick = () => void runTool(button.dataset.tool!);
   });
@@ -1458,7 +1618,7 @@ function bindInterface() {
   let dragX = 0;
   let dragY = 0;
   inspectorBody.addEventListener("pointerdown", (event) => {
-    if (isTreeMode()) return;
+    if (isTreeMode() || byId("workspace").classList.contains("compare-mode")) return;
     panMoved = false;
     const target = event.target as HTMLElement;
     if (target.closest("button, input, select, textarea, .node")) return;
@@ -1507,7 +1667,9 @@ function bindInterface() {
 
   const overlay = byId("drop-overlay");
   void getCurrentWebview().onDragDropEvent((event) => {
+    const comparing = byId("workspace").classList.contains("compare-mode");
     if (event.payload.type === "enter" || event.payload.type === "over") {
+      overlay.textContent = comparing ? "拖入文件作为右侧对比 JSON" : "拖入文件以可视化";
       overlay.classList.add("active");
       return;
     }
@@ -1516,7 +1678,9 @@ function bindInterface() {
     const path = event.payload.paths[0];
     if (!path) return;
     void invoke<{ fileName: string; contents: string }>("read_dropped_file", { path })
-      .then((file) => loadContents(file.contents, file.fileName))
+      .then((file) => comparing
+        ? loadCompareFile(file.contents, file.fileName)
+        : loadContents(file.contents, file.fileName))
       .catch((error: unknown) => showError(String(error)));
   });
   document.addEventListener("click", (event) => {

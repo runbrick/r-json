@@ -94,6 +94,10 @@
                 <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1" /><rect x="9" y="9" width="5" height="5" rx="1" /><path d="M7 4.5h2.5V9" /></svg>
                 图形
               </button>
+              <button class="view-tab" data-view="diff">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3h5M2 8h5M2 13h5M9 3h5M9 8h5M9 13h5" /></svg>
+                对比
+              </button>
             </div>
             <div class="search-wrap">
               <input id="search" placeholder="JMESPath 查询…" autocomplete="off" spellcheck="false" />
@@ -122,6 +126,19 @@
               <div id="nodes"></div>
             </div>
             <div id="tree" class="tree-pane"></div>
+            <div id="diff-pane" class="diff-pane hidden">
+              <div class="diff-bar">
+                <button id="diff-open" class="cmd" type="button">打开对比文件</button>
+                <button id="diff-paste" class="cmd" type="button">粘贴</button>
+                <span id="diff-file" class="diff-file">未加载对比文件</span>
+                <span id="diff-summary" class="diff-summary"></span>
+                <button id="diff-back" class="cmd" type="button">预览</button>
+              </div>
+              <div class="diff-column">
+                <div class="diff-label">对比 JSON</div>
+                <div id="diff-right" class="diff-view"></div>
+              </div>
+            </div>
           </div>
           <section id="query-dock" class="query-dock hidden">
             <div class="query-bar">

@@ -63,6 +63,18 @@ fn parse_jsonc(contents: &str) -> Result<Value, String> {
     serde_json::from_str(&stripped).map_err(|error| error.to_string())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_keeps_object_key_order() {
+        let value = parse_to_json(FormatKind::Json, r#"{"z":1,"a":2,"m":3}"#).unwrap();
+        let keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
+        assert_eq!(keys, vec!["z", "a", "m"]);
+    }
+}
+
 fn strip_json_comments(contents: &str) -> String {
     let mut output = String::with_capacity(contents.len());
     let mut chars = contents.chars().peekable();
