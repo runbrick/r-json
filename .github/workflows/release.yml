@@ -26,6 +26,8 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -47,6 +49,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Generate release notes
+        id: notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/release-notes.mjs
+
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -55,8 +63,34 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: R JSON v__VERSION__
-          releaseBody: See the assets to download this version and install.
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
           updaterJsonPreferNsis: true
+
+  write-release-notes:
+    needs: publish-tauri
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Write generated notes to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/release-notes.mjs > release-notes.md
+          VERSION=$(node -e "const fs=require('fs'); console.log(JSON.parse(fs.readFileSync('package.json','utf8')).version)")
+          gh release view "v${VERSION}" >/dev/null
+          gh release edit "v${VERSION}" --notes-file release-notes.md

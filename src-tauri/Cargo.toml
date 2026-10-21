@@ -2,7 +2,8 @@
 name = "r-json"
 version = "0.2.2"
 description = "Local JSON Crack-style visualizer built with Rust and Tauri 2"
-authors = ["r-json"]
+authors = ["runbrick"]
+license = "Apache-2.0"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

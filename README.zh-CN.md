@@ -13,6 +13,7 @@
     <img src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
     <img src="https://img.shields.io/badge/Vite-646CFF?logo=vite&logoColor=white" alt="Vite" />
     <img src="https://img.shields.io/badge/CodeMirror-6-D97706" alt="CodeMirror" />
+    <img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="Apache-2.0" />
   </p>
   <p>
     <img src="https://img.shields.io/badge/JSON-000000?logo=json&logoColor=white" alt="JSON" />
@@ -37,6 +38,7 @@ JSON、YAML、XML、CSV、TOML 的解析与索引都在 Rust 中完成。图布�
 ## 功能
 
 - 交互式 **树形** 与 **图形** 视图，支持平移、缩放、折叠，以及四种布局方向
+- 并排 **JSON 对比**
 - 实时编辑器：校验、美化、压缩、转义 / 反转义、修复尾逗号
 - **JSON**、**YAML**、**XML**、**CSV**、**TOML** 互相转换
 - 生成 **TypeScript**、**Rust**、**Go**、**Kotlin** 与 **JSON Schema**
@@ -45,66 +47,48 @@ JSON、YAML、XML、CSV、TOML 的解析与索引都在 Rust 中完成。图布�
 - 深色 / 浅色主题、拖放打开、全屏、导出 SVG 与 PNG
 - 全部在本地处理，数据不会离开本机
 
-## 运行
+## 下载安装
+
+到 [GitHub Releases](https://github.com/runbrick/r-json/releases/latest) 下载对应平台的安装包：
+
+| 平台 | 安装包 |
+| --- | --- |
+| Windows | `.exe`（NSIS）或 `.msi` |
+| macOS | `.dmg`（Apple Silicon 与 Intel） |
+| Linux | `.deb`、`.rpm` 或 `.AppImage` |
+
+安装后打开 **R JSON** 即可使用。数据全程留在本机，不会上传。
+
+## 使用
+
+1. **文件 → 打开**（`Ctrl+O`）打开文件，把文件拖进窗口，或用 **文件 → 从剪贴板导入**。
+2. 支持 JSON、YAML、XML、CSV、TOML。
+3. 左侧编辑。可用 **美化**、**压缩**、**转义**、**反转义**、**压缩转义**。**工具 → 修复 JSON** 可处理尾逗号等问题。
+4. 右侧查看：
+   - **树形**：展开、折叠节点
+   - **图形**：平移、缩放、跟随连线
+   - **对比**：打开或粘贴另一份 JSON，并排比较差异
+5. 工具栏用 **JMESPath** 或 **JSONPath** 搜索，下拉框可切换查询语言。
+6. **工具** 菜单可转换 YAML / XML / CSV / TOML，或生成 TypeScript / Rust / Go / Kotlin / JSON Schema。
+7. **Schema** 可对照 JSON Schema 校验。也可从当前 JSON 生成 Schema 再验证。
+8. 状态栏可导出当前视图为 **SVG** 或 **PNG**，并切换编辑器、主题和全屏。
+
+## 更新
+
+已安装的应用会检查 [GitHub Releases](https://github.com/runbrick/r-json/releases) 是否有新版本。每个版本的更新说明会写在 Release 页面，**帮助 → 检查更新** 时也能看到同一段内容。启动后等几秒也会自动检查。
+
+## 从源码运行
+
+需要 [Node.js](https://nodejs.org/)（LTS）和 [Rust](https://rustup.rs/)。
 
 ```powershell
+git clone https://github.com/runbrick/r-json.git
+cd r-json
 npm install
 npm run tauri dev
 ```
 
-发布构建会启用 LTO 与原生优化：
-
-```powershell
-npm run tauri build
-```
-
-## 自动更新与 GitHub 发版
-
-已安装的应用会检查 [GitHub Releases](https://github.com/runbrick/r-json/releases) 是否有新版本，下载签名后的安装包、校验后自动安装。
-
-### 一次性准备
-
-1. 如果还没有更新签名密钥，先生成一对：
-
-```powershell
-npm run tauri signer generate -- -w "$HOME\.tauri\r-json.key"
-```
-
-2. 打开 GitHub 仓库 **Settings → Secrets and variables → Actions**，添加：
-
-| Secret | 值 |
-| --- | --- |
-| `TAURI_SIGNING_PRIVATE_KEY` | `r-json.key` 的完整内容 |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 密钥密码；没有密码就留空 |
-
-私钥务必另外备份。私钥丢了，已经装过的旧版本就没法再收到签名更新。
-
-3. 在 **Settings → Actions → General → Workflow permissions** 里打开 **Read and write permissions**，这样工作流才能创建 Release。
-
-公钥已经写在 `src-tauri/tauri.conf.json` 里。私钥不要提交到 git。
-
-仓库需要是公开的，否则应用无法匿名下载 `latest.json`。
-
-### 发布一个新版本
-
-版本号以 `package.json` 为准。`tauri.conf.json` 会读取它，`npm version` 还会同步 `src-tauri/Cargo.toml`。
-
-```powershell
-npm version 0.2.0
-git push origin master
-git push origin v0.2.0
-```
-
-也可以用 `npm version patch`、`npm version minor` 或 `npm version major`。这条命令会改 `package.json`、同步 Cargo 文件、提交，并打上 `v*` tag。
-
-推送 `v*` tag 会触发 `.github/workflows/release.yml`。它会构建 Windows / macOS / Linux 安装包，签名更新文件，创建 GitHub Release，并上传 `latest.json`。
-
-工作流跑完后：
-
-1. 打开 Release 页面，确认安装包和 `latest.json` 都在附件里。
-2. 安装旧版本，然后用 **帮助 → 检查更新**，或启动几秒后等待自动检查。
-
-也可以在 **Actions** 页手动运行 **Publish**。版本号仍然以 `package.json` 为准。
+Linux 首次运行前，请先安装 Tauri 所需的 WebKitGTK 等相关依赖。
 
 ## 鸣谢
 
@@ -126,3 +110,7 @@ R JSON 离不开这些开源项目：
 | [JSON Crack](https://github.com/AykutSarac/jsoncrack.com) | 原始界面与思路（Apache-2.0） |
 
 JSON Crack 的界面与思路来自 [AykutSarac/jsoncrack.com](https://github.com/AykutSarac/jsoncrack.com)，采用 Apache-2.0 许可。本项目是独立的 Rust / Tauri 实现，并未复制其源码。
+
+## 许可
+
+R JSON 使用 [Apache License 2.0](LICENSE)。

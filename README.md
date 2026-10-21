@@ -13,6 +13,7 @@
     <img src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
     <img src="https://img.shields.io/badge/Vite-646CFF?logo=vite&logoColor=white" alt="Vite" />
     <img src="https://img.shields.io/badge/CodeMirror-6-D97706" alt="CodeMirror" />
+    <img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="Apache-2.0" />
   </p>
   <p>
     <img src="https://img.shields.io/badge/JSON-000000?logo=json&logoColor=white" alt="JSON" />
@@ -37,6 +38,7 @@ JSON, YAML, XML, CSV, and TOML are parsed and indexed in Rust. Graph layout, par
 ## Features
 
 - Interactive **tree** and **graph** views, with pan, zoom, collapse, and four layout directions
+- Side-by-side **JSON comparison**
 - Live editor with validation, format, minify, escape / unescape, and trailing-comma repair
 - Convert between **JSON**, **YAML**, **XML**, **CSV**, and **TOML**
 - Generate **TypeScript**, **Rust**, **Go**, **Kotlin**, and **JSON Schema**
@@ -45,66 +47,48 @@ JSON, YAML, XML, CSV, and TOML are parsed and indexed in Rust. Graph layout, par
 - Dark / light themes, drag-and-drop, fullscreen, SVG and PNG export
 - Fully local processing — nothing leaves your machine
 
-## Getting Started
+## Download and install
+
+Grab the latest installer from [GitHub Releases](https://github.com/runbrick/r-json/releases/latest):
+
+| Platform | Package |
+| --- | --- |
+| Windows | `.exe` (NSIS) or `.msi` |
+| macOS | `.dmg` (Apple Silicon and Intel) |
+| Linux | `.deb`, `.rpm`, or `.AppImage` |
+
+After installing, launch **R JSON**. The app stays on your machine; documents are never uploaded.
+
+## Usage
+
+1. Open a file with **文件 → 打开** (`Ctrl+O`), drag a file onto the window, or paste with **文件 → 从剪贴板导入**.
+2. Supported formats: JSON, YAML, XML, CSV, and TOML.
+3. Edit on the left. Use **美化**, **压缩**, **转义**, **反转义**, or **压缩转义**. **工具 → 修复 JSON** repairs trailing commas and similar issues.
+4. Inspect on the right:
+   - **树形**: expand and collapse nodes
+   - **图形**: pan, zoom, and follow links
+   - **对比**: open or paste a second JSON document and compare
+5. Search with **JMESPath** or **JSONPath** in the toolbar. Switch the query language from the dropdown.
+6. Convert or generate from **工具**: YAML / XML / CSV / TOML, or TypeScript / Rust / Go / Kotlin / JSON Schema.
+7. Validate against a schema with **Schema**. Generate a schema from the current JSON, then run the check.
+8. Export the current view as **SVG** or **PNG** from the status bar. Toggle the editor, theme, and fullscreen there as well.
+
+## Updates
+
+Installed copies check [GitHub Releases](https://github.com/runbrick/r-json/releases) for a newer version. Each release includes the changelog for that version; the same notes appear in **帮助 → 检查更新**. You can also wait a few seconds after launch — the app checks automatically.
+
+## Run from source
+
+You need [Node.js](https://nodejs.org/) (LTS) and [Rust](https://rustup.rs/).
 
 ```powershell
+git clone https://github.com/runbrick/r-json.git
+cd r-json
 npm install
 npm run tauri dev
 ```
 
-Release builds use LTO and native optimizations:
-
-```powershell
-npm run tauri build
-```
-
-## Auto-update and GitHub Releases
-
-Installed apps check [GitHub Releases](https://github.com/runbrick/r-json/releases) for a newer version, download the signed installer, verify it, and install it.
-
-### One-time setup
-
-1. Generate an updater signing key if you do not already have one:
-
-```powershell
-npm run tauri signer generate -- -w "$HOME\.tauri\r-json.key"
-```
-
-2. In the GitHub repo, open **Settings → Secrets and variables → Actions** and add:
-
-| Secret | Value |
-| --- | --- |
-| `TAURI_SIGNING_PRIVATE_KEY` | Full contents of `r-json.key` |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Key password, or leave empty if the key has none |
-
-Keep the private key somewhere safe. If it is lost, already-installed copies cannot receive signed updates.
-
-3. In **Settings → Actions → General → Workflow permissions**, allow **Read and write permissions** so the workflow can create releases.
-
-The matching public key is already in `src-tauri/tauri.conf.json`. Do not put the private key in git.
-
-The repository should be public, or the updater cannot download `latest.json` without extra authentication.
-
-### Publish a version
-
-`package.json` is the single source of truth. `tauri.conf.json` reads it, and `npm version` also syncs `src-tauri/Cargo.toml`.
-
-```powershell
-npm version 0.2.0
-git push origin master
-git push origin v0.2.0
-```
-
-`npm version patch`, `npm version minor`, or `npm version major` also work. That command updates `package.json`, syncs the Cargo files, commits, and creates the `v*` tag.
-
-Pushing a `v*` tag runs `.github/workflows/release.yml`. It builds Windows, macOS, and Linux installers, signs the updater artifacts, creates a GitHub Release, and uploads `latest.json`.
-
-After the workflow finishes:
-
-1. Open the release page and confirm the installers plus `latest.json` are attached.
-2. Install the previous version, then use **Help → Check for updates**, or wait a few seconds after launch.
-
-You can also run the workflow by hand from the **Actions** tab (**Publish → Run workflow**). It still uses the version in `package.json`.
+On Linux, install the WebKitGTK and related packages that Tauri requires before the first run.
 
 ## Acknowledgements
 
@@ -126,3 +110,7 @@ R JSON stands on the shoulders of these open-source projects:
 | [JSON Crack](https://github.com/AykutSarac/jsoncrack.com) | Original interface and idea (Apache-2.0) |
 
 JSON Crack's interface and idea are from [AykutSarac/jsoncrack.com](https://github.com/AykutSarac/jsoncrack.com), licensed under Apache-2.0. This project is an independent Rust/Tauri implementation and does not copy that project's source.
+
+## License
+
+R JSON is licensed under the [Apache License 2.0](LICENSE).
