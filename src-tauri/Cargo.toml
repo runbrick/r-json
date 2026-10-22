@@ -1,6 +1,6 @@
 [package]
 name = "r-json"
-version = "0.2.2"
+version = "0.2.3"
 description = "Local JSON Crack-style visualizer built with Rust and Tauri 2"
 authors = ["runbrick"]
 license = "Apache-2.0"
