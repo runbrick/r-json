@@ -448,6 +448,13 @@ button:disabled { opacity: 0.4; cursor: default; }
 .view-tab.active,
 .view-tab:hover { background: var(--hover); color: var(--text); }
 .view-tab.active { color: var(--accent); }
+.graph-fold {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+.graph-fold.hidden { display: none; }
 
 .tree-pane {
   position: absolute;
@@ -472,7 +479,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .workspace.compare-mode .viewport,
 .workspace.compare-mode .tree-pane,
-.workspace.compare-mode .search-wrap {
+.workspace.compare-mode .search-wrap,
+.workspace.compare-mode .graph-fold {
   visibility: hidden;
   pointer-events: none;
 }

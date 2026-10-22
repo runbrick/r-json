@@ -494,6 +494,7 @@ function applyView(view: "graph" | "tree" | "diff") {
   document.querySelectorAll<HTMLButtonElement>("[data-view]").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === view);
   });
+  byId("graph-fold").classList.toggle("hidden", view !== "graph");
   if (view === "graph") void ensureGraphRendered();
   if (view === "diff") {
     renderCompare();
@@ -923,6 +924,20 @@ function updateGraphSelection() {
 async function toggleGraphNode(nodeId: number) {
   graph = await invoke<GraphPayload>("toggle_node", { nodeId });
   renderGraph();
+}
+
+async function setGraphExpanded(expanded: boolean) {
+  try {
+    graph = await invoke<GraphPayload>("expand_all", { expanded });
+    graphReady = true;
+    renderGraph();
+    centerView();
+    if (graph?.truncated) {
+      stats.textContent = stats.textContent.replace(/ · 图形已截断$/, "") + " · 图形已截断";
+    }
+  } catch (error) {
+    showError(String(error));
+  }
 }
 
 async function selectNode(nodeId: number, path?: string, scrollSource = true) {
@@ -1543,6 +1558,8 @@ function bindInterface() {
   document.querySelectorAll<HTMLButtonElement>("[data-view]").forEach((button) => {
     button.onclick = () => applyView(button.dataset.view as "graph" | "tree" | "diff");
   });
+  byId("expand-all").onclick = () => void setGraphExpanded(true);
+  byId("collapse-all").onclick = () => void setGraphExpanded(false);
   byId("diff-open").onclick = () => openCompareFile();
   byId("diff-paste").onclick = async () => {
     await loadCompareFile(await navigator.clipboard.readText(), "剪贴板");
