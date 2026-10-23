@@ -656,6 +656,19 @@ async function ensureGraphRendered() {
     }
   }
   renderGraph();
+  if (selectedId !== null) {
+    if (!graphCardForNode(selectedId)) {
+      try {
+        graph = await invoke<GraphPayload>("reveal_node", { nodeId: selectedId });
+        renderGraph();
+      } catch {
+        centerView();
+        return;
+      }
+    }
+    focusGraphNode(selectedId);
+    return;
+  }
   centerView();
 }
 
@@ -943,7 +956,22 @@ async function setGraphExpanded(expanded: boolean) {
 async function selectNode(nodeId: number, path?: string, scrollSource = true) {
   selectedId = nodeId;
   if (path) selectedPath = path;
-  if (graphReady) updateGraphSelection();
+  if (graphReady || !isTreeMode()) {
+    const visible = graphCardForNode(nodeId);
+    if (!visible) {
+      try {
+        graph = await invoke<GraphPayload>("reveal_node", { nodeId });
+        graphReady = true;
+        renderGraph();
+      } catch {
+        // Keep the current graph if the node cannot be revealed.
+      }
+    }
+  }
+  if (graphReady) {
+    updateGraphSelection();
+    focusGraphNode(nodeId);
+  }
   if (!treeContains(treeData, nodeId)) {
     try {
       treeData = await invoke<TreeNode[]>("reveal_tree", { nodeId });
@@ -1319,19 +1347,7 @@ async function applySearchHit(hit: SearchHit) {
   const input = byId<HTMLInputElement>("search");
   input.value = suggestionLabel(hit);
   hideSearchResults();
-  if (hit.nodeId) {
-    if (graphReady || !isTreeMode()) {
-      try {
-        graph = await invoke<GraphPayload>("reveal_node", { nodeId: hit.nodeId });
-        graphReady = true;
-        renderGraph();
-      } catch {
-        // Keep the current graph if the node cannot be revealed.
-      }
-    }
-  }
   await selectNode(hit.nodeId, hit.path);
-  focusGraphNode(hit.nodeId);
 }
 
 async function commitSearchFromInput() {

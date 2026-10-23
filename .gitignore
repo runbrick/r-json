@@ -24,6 +24,7 @@ dist-ssr
 *.sw?
 
 .vscode
+.grok
 
 # Tauri updater signing keys — never commit these
 *.key
