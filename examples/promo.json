@@ -30,7 +30,7 @@
   "tools": {
     "edit": ["format", "minify", "escape", "repair"],
     "query": ["jq", "JSONPath", "JMESPath"],
-    "generate": ["TypeScript", "Rust", "Go", "Kotlin", "JSON Schema"],
+    "generate": ["TypeScript", "Rust", "Go", "Kotlin", "Java", "JSON Schema"],
     "export": ["SVG", "PNG"]
   },
   "document": {

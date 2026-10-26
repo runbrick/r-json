@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 pub fn json_schema(value: &Value) -> Value {
     let inferred = infer_schema(value);
@@ -155,7 +155,10 @@ pub fn generate(value: &Value, language: &str, root_name: &str) -> Result<String
         "rust" => Ok(rust_types(value, root_name)),
         "go" => Ok(go_types(value, root_name)),
         "kotlin" => Ok(kotlin_types(value, root_name)),
-        "schema" => serde_json::to_string_pretty(&json_schema(value)).map_err(|error| error.to_string()),
+        "java" => Ok(java_types(value, root_name)),
+        "schema" => {
+            serde_json::to_string_pretty(&json_schema(value)).map_err(|error| error.to_string())
+        }
         other => Err(format!("Unsupported language: {other}")),
     }
 }
@@ -190,8 +193,15 @@ fn emit_typescript(
             }
             output.push_str("}\n\n");
             for (key, child) in object {
-                if child.is_object() || child.as_array().is_some_and(|items| items.first().is_some_and(Value::is_object)) {
-                    let nested = child.as_array().and_then(|items| items.first()).unwrap_or(child);
+                if child.is_object()
+                    || child
+                        .as_array()
+                        .is_some_and(|items| items.first().is_some_and(Value::is_object))
+                {
+                    let nested = child
+                        .as_array()
+                        .and_then(|items| items.first())
+                        .unwrap_or(child);
                     emit_typescript(nested, &pascal(key), output, seen);
                 }
             }
@@ -208,7 +218,13 @@ fn emit_typescript(
 fn typescript_type(value: &Value, nested_name: &str) -> String {
     match value {
         Value::Object(_) => nested_name.to_string(),
-        Value::Array(items) => format!("{}[]", items.first().map(|item| typescript_type(item, nested_name)).unwrap_or_else(|| "unknown".into())),
+        Value::Array(items) => format!(
+            "{}[]",
+            items
+                .first()
+                .map(|item| typescript_type(item, nested_name))
+                .unwrap_or_else(|| "unknown".into())
+        ),
         Value::String(_) => "string".into(),
         Value::Number(number) if number.is_i64() || number.is_u64() => "number".into(),
         Value::Number(_) => "number".into(),
@@ -224,7 +240,10 @@ fn rust_types(value: &Value, root_name: &str) -> String {
 }
 
 fn emit_rust(value: &Value, name: &str, output: &mut String, seen: &mut BTreeMap<String, String>) {
-    if seen.insert(name.to_string(), type_signature(value)).is_some() {
+    if seen
+        .insert(name.to_string(), type_signature(value))
+        .is_some()
+    {
         return;
     }
     let Value::Object(object) = value else {
@@ -251,7 +270,10 @@ fn emit_rust(value: &Value, name: &str, output: &mut String, seen: &mut BTreeMap
     }
     output.push_str("}\n\n");
     for (key, child) in object {
-        let nested = child.as_array().and_then(|items| items.first()).unwrap_or(child);
+        let nested = child
+            .as_array()
+            .and_then(|items| items.first())
+            .unwrap_or(child);
         if nested.is_object() {
             emit_rust(nested, &pascal(key), output, seen);
         }
@@ -261,7 +283,13 @@ fn emit_rust(value: &Value, name: &str, output: &mut String, seen: &mut BTreeMap
 fn rust_type(value: &Value, nested_name: &str) -> String {
     match value {
         Value::Object(_) => nested_name.to_string(),
-        Value::Array(items) => format!("Vec<{}>", items.first().map(|item| rust_type(item, nested_name)).unwrap_or_else(|| "serde_json::Value".into())),
+        Value::Array(items) => format!(
+            "Vec<{}>",
+            items
+                .first()
+                .map(|item| rust_type(item, nested_name))
+                .unwrap_or_else(|| "serde_json::Value".into())
+        ),
         Value::String(_) => "String".into(),
         Value::Number(number) if number.is_i64() || number.is_u64() => "i64".into(),
         Value::Number(_) => "f64".into(),
@@ -277,7 +305,10 @@ fn go_types(value: &Value, root_name: &str) -> String {
 }
 
 fn emit_go(value: &Value, name: &str, output: &mut String, seen: &mut BTreeMap<String, String>) {
-    if seen.insert(name.to_string(), type_signature(value)).is_some() {
+    if seen
+        .insert(name.to_string(), type_signature(value))
+        .is_some()
+    {
         return;
     }
     let Value::Object(object) = value else {
@@ -297,7 +328,10 @@ fn emit_go(value: &Value, name: &str, output: &mut String, seen: &mut BTreeMap<S
     }
     output.push_str("}\n\n");
     for (key, child) in object {
-        let nested = child.as_array().and_then(|items| items.first()).unwrap_or(child);
+        let nested = child
+            .as_array()
+            .and_then(|items| items.first())
+            .unwrap_or(child);
         if nested.is_object() {
             emit_go(nested, &pascal(key), output, seen);
         }
@@ -307,7 +341,13 @@ fn emit_go(value: &Value, name: &str, output: &mut String, seen: &mut BTreeMap<S
 fn go_type(value: &Value, nested_name: &str) -> String {
     match value {
         Value::Object(_) => nested_name.to_string(),
-        Value::Array(items) => format!("[]{}", items.first().map(|item| go_type(item, nested_name)).unwrap_or_else(|| "any".into())),
+        Value::Array(items) => format!(
+            "[]{}",
+            items
+                .first()
+                .map(|item| go_type(item, nested_name))
+                .unwrap_or_else(|| "any".into())
+        ),
         Value::String(_) => "string".into(),
         Value::Number(number) if number.is_i64() || number.is_u64() => "int64".into(),
         Value::Number(_) => "float64".into(),
@@ -322,8 +362,16 @@ fn kotlin_types(value: &Value, root_name: &str) -> String {
     output
 }
 
-fn emit_kotlin(value: &Value, name: &str, output: &mut String, seen: &mut BTreeMap<String, String>) {
-    if seen.insert(name.to_string(), type_signature(value)).is_some() {
+fn emit_kotlin(
+    value: &Value,
+    name: &str,
+    output: &mut String,
+    seen: &mut BTreeMap<String, String>,
+) {
+    if seen
+        .insert(name.to_string(), type_signature(value))
+        .is_some()
+    {
         return;
     }
     let Value::Object(object) = value else {
@@ -348,17 +396,87 @@ fn emit_kotlin(value: &Value, name: &str, output: &mut String, seen: &mut BTreeM
     output.push_str(&fields);
     output.push_str("\n)\n\n");
     for (key, child) in object {
-        let nested = child.as_array().and_then(|items| items.first()).unwrap_or(child);
+        let nested = child
+            .as_array()
+            .and_then(|items| items.first())
+            .unwrap_or(child);
         if nested.is_object() {
             emit_kotlin(nested, &pascal(key), output, seen);
         }
     }
 }
 
+fn java_types(value: &Value, root_name: &str) -> String {
+    let mut output = String::from("import com.fasterxml.jackson.annotation.JsonProperty;\n\n");
+    emit_java(value, root_name, &mut output, &mut BTreeMap::new());
+    output
+}
+
+fn emit_java(value: &Value, name: &str, output: &mut String, seen: &mut BTreeMap<String, String>) {
+    if seen
+        .insert(name.to_string(), type_signature(value))
+        .is_some()
+    {
+        return;
+    }
+    let Value::Object(object) = value else {
+        if let Some(first) = value.as_array().and_then(|items| items.first()) {
+            emit_java(first, name, output, seen);
+        }
+        return;
+    };
+    output.push_str(&format!("public class {name} {{\n"));
+    for (key, child) in object {
+        let field = camel(key);
+        if field != *key {
+            output.push_str(&format!("    @JsonProperty(\"{key}\")\n"));
+        }
+        output.push_str(&format!(
+            "    public {} {};\n",
+            java_type(child, &pascal(key)),
+            field
+        ));
+    }
+    output.push_str("}\n\n");
+    for (key, child) in object {
+        let nested = child
+            .as_array()
+            .and_then(|items| items.first())
+            .unwrap_or(child);
+        if nested.is_object() {
+            emit_java(nested, &pascal(key), output, seen);
+        }
+    }
+}
+
+fn java_type(value: &Value, nested_name: &str) -> String {
+    match value {
+        Value::Object(_) => nested_name.to_string(),
+        Value::Array(items) => format!(
+            "java.util.List<{}>",
+            items
+                .first()
+                .map(|item| java_type(item, nested_name))
+                .unwrap_or_else(|| "Object".into())
+        ),
+        Value::String(_) => "String".into(),
+        Value::Number(number) if number.is_i64() || number.is_u64() => "Long".into(),
+        Value::Number(_) => "Double".into(),
+        Value::Bool(_) => "Boolean".into(),
+        Value::Null => "Object".into(),
+    }
+}
+
 fn kotlin_type(value: &Value, nested_name: &str) -> String {
     match value {
         Value::Object(_) => nested_name.to_string(),
-        Value::Array(items) => format!("List<{}>", items.first().map(|item| kotlin_type(item, nested_name)).unwrap_or_else(|| "Any?".into())),
+        Value::Array(items) => format!(
+            "List<{}>",
+            items
+                .first()
+                .map(|item| kotlin_type(item, nested_name))
+                .unwrap_or_else(|| "Any?".into())
+        ),
         Value::String(_) => "String".into(),
         Value::Number(number) if number.is_i64() || number.is_u64() => "Long".into(),
         Value::Number(_) => "Double".into(),

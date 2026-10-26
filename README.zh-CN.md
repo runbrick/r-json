@@ -41,7 +41,7 @@ JSON、YAML、XML、CSV、TOML 的解析与索引都在 Rust 中完成。图布�
 - 并排 **JSON 对比**
 - 实时编辑器：校验、美化、压缩、转义 / 反转义、修复尾逗号
 - **JSON**、**YAML**、**XML**、**CSV**、**TOML** 互相转换
-- 生成 **TypeScript**、**Rust**、**Go**、**Kotlin** 与 **JSON Schema**
+- 生成 **TypeScript**、**Rust**、**Go**、**Kotlin**、**Java** 与 **JSON Schema**
 - 支持 **jq**、**JSONPath**、**JMESPath** 查询
 - 按键名、值、路径并行搜索
 - 深色 / 浅色主题、拖放打开、全屏、导出 SVG 与 PNG
@@ -69,7 +69,7 @@ JSON、YAML、XML、CSV、TOML 的解析与索引都在 Rust 中完成。图布�
    - **图形**：平移、缩放、跟随连线
    - **对比**：打开或粘贴另一份 JSON，并排比较差异
 5. 工具栏用 **JMESPath** 或 **JSONPath** 搜索，下拉框可切换查询语言。
-6. **工具** 菜单可转换 YAML / XML / CSV / TOML，或生成 TypeScript / Rust / Go / Kotlin / JSON Schema。
+6. **工具** 菜单可转换 YAML / XML / CSV / TOML，或生成 TypeScript / Rust / Go / Kotlin / Java / JSON Schema。
 7. **Schema** 可对照 JSON Schema 校验。也可从当前 JSON 生成 Schema 再验证。
 8. 状态栏可导出当前视图为 **SVG** 或 **PNG**，并切换编辑器、主题和全屏。
 
