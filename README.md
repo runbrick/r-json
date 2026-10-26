@@ -41,7 +41,7 @@ JSON, YAML, XML, CSV, and TOML are parsed and indexed in Rust. Graph layout, par
 - Side-by-side **JSON comparison**
 - Live editor with validation, format, minify, escape / unescape, and trailing-comma repair
 - Convert between **JSON**, **YAML**, **XML**, **CSV**, and **TOML**
-- Generate **TypeScript**, **Rust**, **Go**, **Kotlin**, and **JSON Schema**
+- Generate **TypeScript**, **Rust**, **Go**, **Kotlin**, **Java**, and **JSON Schema**
 - Query with **jq**, **JSONPath**, and **JMESPath**
 - Parallel key, value, and path search
 - Dark / light themes, drag-and-drop, fullscreen, SVG and PNG export
@@ -69,7 +69,7 @@ After installing, launch **R JSON**. The app stays on your machine; documents ar
    - **图形**: pan, zoom, and follow links
    - **对比**: open or paste a second JSON document and compare
 5. Search with **JMESPath** or **JSONPath** in the toolbar. Switch the query language from the dropdown.
-6. Convert or generate from **工具**: YAML / XML / CSV / TOML, or TypeScript / Rust / Go / Kotlin / JSON Schema.
+6. Convert or generate from **工具**: YAML / XML / CSV / TOML, or TypeScript / Rust / Go / Kotlin / Java / JSON Schema.
 7. Validate against a schema with **Schema**. Generate a schema from the current JSON, then run the check.
 8. Export the current view as **SVG** or **PNG** from the status bar. Toggle the editor, theme, and fullscreen there as well.
 
