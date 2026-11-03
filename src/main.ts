@@ -9,7 +9,7 @@ import {
   syntaxHighlighting,
   HighlightStyle,
 } from "@codemirror/language";
-import { highlightSelectionMatches } from "@codemirror/search";
+import { highlightSelectionMatches, search as cmSearch, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState, RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { Decoration, type DecorationSet, drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
@@ -238,6 +238,11 @@ const sourceEditorTheme = EditorView.theme({
     color: "var(--accent)",
     cursor: "pointer",
   },
+  ".cm-panels": {
+    backgroundColor: "var(--panel, var(--bg))",
+    color: "var(--text)",
+    borderColor: "var(--line)",
+  },
   ".cm-source-wrap": {
     backgroundColor: "var(--selected)",
     borderRadius: "6px",
@@ -417,6 +422,7 @@ function createSourceEditor() {
         indentUnit.of("  "),
         syntaxHighlighting(jsonHighlightStyle),
         highlightSelectionMatches(),
+        cmSearch({ top: true }),
         indentationMarkers({
           highlightActiveBlock: true,
           hideFirstIndent: true,
@@ -432,13 +438,10 @@ function createSourceEditor() {
         sourceEditorTheme,
         sourceTheme.of(sourceThemeExtensions()),
         keymap.of([
-          { key: "Mod-f", run: () => { byId<HTMLInputElement>("search").focus(); return true; } },
-          { key: "Mod-g", run: () => true },
-          { key: "Shift-Mod-g", run: () => true },
-          { key: "Mod-h", run: () => true },
           ...defaultKeymap,
           ...historyKeymap,
           ...foldKeymap,
+          ...searchKeymap,
           indentWithTab,
         ]),
         EditorView.updateListener.of((update) => {
@@ -1690,7 +1693,11 @@ function bindInterface() {
     if (event.ctrlKey && event.key.toLowerCase() === "o") { event.preventDefault(); void openFile(); }
     if (event.ctrlKey && event.key.toLowerCase() === "s") { event.preventDefault(); void saveFile(); }
     if (event.ctrlKey && event.key.toLowerCase() === "n") { event.preventDefault(); resetWorkspace(); }
-    if (event.ctrlKey && event.key.toLowerCase() === "f") { event.preventDefault(); byId<HTMLInputElement>("search").focus(); }
+    if (event.ctrlKey && event.key.toLowerCase() === "f") {
+      event.preventDefault();
+      // Inside the source editor, Ctrl+F opens its own search panel.
+      if (!sourceEditor?.dom.contains(event.target as Node)) byId<HTMLInputElement>("search").focus();
+    }
     if (event.key === "Escape") {
       modal.classList.add("hidden");
       schemaModal.classList.add("hidden");
