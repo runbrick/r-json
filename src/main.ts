@@ -145,6 +145,19 @@ const modal = document.querySelector<HTMLElement>("#modal")!;
 const modalTitle = document.querySelector<HTMLElement>("#modal-title")!;
 const modalBody = document.querySelector<HTMLElement>("#modal-body")!;
 
+function setPlatformAppearance() {
+  const platform = navigator.platform.toLowerCase();
+  const userAgent = navigator.userAgent.toLowerCase();
+  const name = platform.startsWith("win") || userAgent.includes("windows")
+    ? "windows"
+    : platform.includes("mac") || /macintosh|mac os|iphone|ipad/.test(userAgent)
+      ? "macos"
+      : platform.includes("linux") || userAgent.includes("linux")
+        ? "linux"
+        : "other";
+  document.documentElement.dataset.platform = name;
+}
+
 const camera = { x: 40, y: 30, scale: 1 };
 let graph: GraphPayload | null = null;
 let selectedId: number | null = null;
@@ -1898,6 +1911,7 @@ function bindUpdater() {
   }, 2500);
 }
 
+setPlatformAppearance();
 bindTitlebar();
 bindInterface();
 bindUpdater();
