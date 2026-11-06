@@ -352,10 +352,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 
 :root[data-platform="macos"] {
-  --titlebar-height: 40px;
-  --window-button-width: 14px;
-  --window-button-height: 14px;
-  --titlebar-side-padding: 14px;
+  --titlebar-height: 28px;
+  --titlebar-side-padding: 78px;
   font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
 }
 
@@ -382,38 +380,6 @@ button:disabled { opacity: 0.4; cursor: default; }
   width: var(--window-button-width, 46px);
   height: var(--window-button-height, 36px);
 }
-
-:root[data-platform="macos"] .titlebar {
-  flex-direction: row-reverse;
-  justify-content: flex-end;
-}
-:root[data-platform="macos"] .titlebar-left { padding-left: 8px; }
-:root[data-platform="macos"] .window-controls {
-  order: 1;
-  align-items: center;
-  gap: 8px;
-  margin: 0 12px 0 6px;
-}
-:root[data-platform="macos"] .window-button {
-  display: grid;
-  flex: 0 0 var(--window-button-width);
-  place-items: center;
-  padding: 0;
-  border-radius: 50%;
-  background: #8e8e93;
-  color: transparent;
-}
-:root[data-platform="macos"] #window-close { background: #ff5f57; }
-:root[data-platform="macos"] #window-minimize { background: #febc2e; }
-:root[data-platform="macos"] #window-maximize { background: #28c840; }
-:root[data-platform="macos"] .window-button svg { opacity: 0; }
-:root[data-platform="macos"] #window-close svg { color: #7d1c16; }
-:root[data-platform="macos"] #window-minimize svg { color: #765400; }
-:root[data-platform="macos"] #window-maximize svg { color: #0c5c1b; }
-:root[data-platform="macos"] .window-controls:hover .window-button svg { opacity: 1; }
-:root[data-platform="macos"] .window-button:hover { filter: brightness(0.92); }
-:root[data-platform="macos"] .window-close:hover { background: #ff5f57; }
-:root[data-platform="macos"] .titlebar-center { flex: 0 0 8px; }
 
 :root[data-platform="linux"] .window-button {
   width: var(--window-button-width);
