@@ -1441,6 +1441,11 @@ function downloadBlob(blob: Blob, name: string) {
 }
 
 function bindTitlebar() {
+  if (document.documentElement.dataset.platform === "macos") {
+    document.querySelector(".window-controls")?.classList.add("hidden");
+    return;
+  }
+
   const appWindow = getCurrentWindow();
   const maximizeIcon = byId("maximize-icon");
   const restoreIcon = byId("restore-icon");
