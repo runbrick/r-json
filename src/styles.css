@@ -21,7 +21,7 @@
   --hover: rgba(22, 119, 255, 0.08);
   --selected: #dbeafe;
   --shadow: 0 8px 24px rgba(31, 35, 40, 0.08);
-  --mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
   --diff-added-bg: rgba(22, 163, 74, 0.16);
   --diff-added-border: #15803d;
   --diff-removed-bg: rgba(239, 68, 68, 0.18);
@@ -46,7 +46,7 @@
   --radius-lg: 10px;
   --radius-pill: 999px;
   --fw-bold: 700;
-  font-family: "Segoe UI", Inter, sans-serif;
+  font-family: system-ui, "Segoe UI", sans-serif;
 }
 
 :root[data-theme="dark"] {
@@ -342,6 +342,85 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .window-button:hover { background: var(--hover); color: var(--text); }
 .window-close:hover { background: #e81123; color: #fff; }
+
+:root[data-platform="windows"] {
+  --titlebar-height: 36px;
+  --window-button-width: 46px;
+  --window-button-height: 36px;
+  --titlebar-side-padding: 8px;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+:root[data-platform="macos"] {
+  --titlebar-height: 40px;
+  --window-button-width: 14px;
+  --window-button-height: 14px;
+  --titlebar-side-padding: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+}
+
+:root[data-platform="linux"] {
+  --titlebar-height: 38px;
+  --window-button-width: 38px;
+  --window-button-height: 38px;
+  --titlebar-side-padding: 10px;
+  font-family: Ubuntu, Cantarell, "Noto Sans", sans-serif;
+}
+
+:root[data-platform="other"] {
+  --titlebar-height: 36px;
+  --window-button-width: 42px;
+  --window-button-height: 36px;
+  --titlebar-side-padding: 8px;
+  font-family: system-ui, sans-serif;
+}
+
+.app { grid-template-rows: var(--titlebar-height, 36px) minmax(0, 1fr) 26px; }
+.titlebar { height: var(--titlebar-height, 36px); }
+.titlebar-left { padding-left: var(--titlebar-side-padding, 8px); }
+.window-button {
+  width: var(--window-button-width, 46px);
+  height: var(--window-button-height, 36px);
+}
+
+:root[data-platform="macos"] .titlebar {
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+}
+:root[data-platform="macos"] .titlebar-left { padding-left: 8px; }
+:root[data-platform="macos"] .window-controls {
+  order: 1;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 0 6px;
+}
+:root[data-platform="macos"] .window-button {
+  display: grid;
+  flex: 0 0 var(--window-button-width);
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
+  background: #8e8e93;
+  color: transparent;
+}
+:root[data-platform="macos"] #window-close { background: #ff5f57; }
+:root[data-platform="macos"] #window-minimize { background: #febc2e; }
+:root[data-platform="macos"] #window-maximize { background: #28c840; }
+:root[data-platform="macos"] .window-button svg { opacity: 0; }
+:root[data-platform="macos"] #window-close svg { color: #7d1c16; }
+:root[data-platform="macos"] #window-minimize svg { color: #765400; }
+:root[data-platform="macos"] #window-maximize svg { color: #0c5c1b; }
+:root[data-platform="macos"] .window-controls:hover .window-button svg { opacity: 1; }
+:root[data-platform="macos"] .window-button:hover { filter: brightness(0.92); }
+:root[data-platform="macos"] .window-close:hover { background: #ff5f57; }
+:root[data-platform="macos"] .titlebar-center { flex: 0 0 8px; }
+
+:root[data-platform="linux"] .window-button {
+  width: var(--window-button-width);
+  height: var(--window-button-height);
+}
+:root[data-platform="linux"] .window-button:hover { background: color-mix(in srgb, var(--text) 10%, transparent); }
+:root[data-platform="linux"] .window-close:hover { background: #c01c28; }
 
 .status-button {
   height: 22px;
