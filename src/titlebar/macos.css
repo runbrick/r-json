@@ -6,3 +6,17 @@
 }
 
 :root[data-platform="macos"] .window-controls { display: none; }
+
+:root[data-platform="macos"] .titlebar-left {
+  flex: 1;
+  padding-right: 8px;
+}
+
+:root[data-platform="macos"] .brand {
+  order: 1;
+  margin-left: auto;
+  margin-right: 0;
+}
+
+:root[data-platform="macos"] .titlebar-center { display: none; }
+:root[data-platform="macos"][data-native-menu="true"] .menubar { display: none; }
