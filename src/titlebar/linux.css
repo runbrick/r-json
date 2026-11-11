@@ -1,0 +1,11 @@
+:root[data-platform="linux"] {
+  --titlebar-height: 38px;
+  --titlebar-side-padding: 10px;
+  font-family: Ubuntu, Cantarell, "Noto Sans", sans-serif;
+}
+
+:root[data-platform="linux"] .window-controls { align-items: center; gap: 4px; padding: 0 8px; }
+:root[data-platform="linux"] .window-button { width: 28px; height: 28px; border-radius: 50%; }
+:root[data-platform="linux"] .window-button svg { width: 16px; height: 16px; stroke-width: 1.5; }
+:root[data-platform="linux"] .window-button:hover { background: color-mix(in srgb, var(--text) 10%, transparent); }
+:root[data-platform="linux"] .window-close:hover { background: #c01c28; color: #fff; }

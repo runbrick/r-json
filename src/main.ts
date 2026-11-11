@@ -14,12 +14,12 @@ import { Compartment, EditorState, RangeSetBuilder, StateEffect, StateField } fr
 import { oneDark } from "@codemirror/theme-one-dark";
 import { Decoration, type DecorationSet, drawSelection, dropCursor, EditorView, highlightActiveLine, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
 import { diffLines, type LineSpan } from "./line-diff";
+import { initializeTitlebar } from "./titlebar";
 import { tags } from "@lezer/highlight";
 import { indentationMarkers } from "@replit/codemirror-indentation-markers";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -144,19 +144,6 @@ const searchResults = document.querySelector<HTMLElement>("#search-results")!;
 const modal = document.querySelector<HTMLElement>("#modal")!;
 const modalTitle = document.querySelector<HTMLElement>("#modal-title")!;
 const modalBody = document.querySelector<HTMLElement>("#modal-body")!;
-
-function setPlatformAppearance() {
-  const platform = navigator.platform.toLowerCase();
-  const userAgent = navigator.userAgent.toLowerCase();
-  const name = platform.startsWith("win") || userAgent.includes("windows")
-    ? "windows"
-    : platform.includes("mac") || /macintosh|mac os|iphone|ipad/.test(userAgent)
-      ? "macos"
-      : platform.includes("linux") || userAgent.includes("linux")
-        ? "linux"
-        : "other";
-  document.documentElement.dataset.platform = name;
-}
 
 const camera = { x: 40, y: 30, scale: 1 };
 let graph: GraphPayload | null = null;
@@ -1440,32 +1427,7 @@ function downloadBlob(blob: Blob, name: string) {
   URL.revokeObjectURL(link.href);
 }
 
-function bindTitlebar() {
-  if (document.documentElement.dataset.platform === "macos") {
-    document.querySelector(".window-controls")?.classList.add("hidden");
-    return;
-  }
-
-  const appWindow = getCurrentWindow();
-  const maximizeIcon = byId("maximize-icon");
-  const restoreIcon = byId("restore-icon");
-  const maximizeButton = byId("window-maximize");
-
-  const syncMaximized = async () => {
-    const maximized = await appWindow.isMaximized();
-    document.documentElement.classList.toggle("maximized", maximized);
-    maximizeIcon.classList.toggle("hidden", maximized);
-    restoreIcon.classList.toggle("hidden", !maximized);
-    maximizeButton.title = maximized ? "Restore" : "Maximize";
-    maximizeButton.setAttribute("aria-label", maximized ? "Restore" : "Maximize");
-  };
-
-  byId("window-minimize").onclick = () => void appWindow.minimize();
-  maximizeButton.onclick = () => void appWindow.toggleMaximize().then(syncMaximized);
-  byId("window-close").onclick = () => void appWindow.close();
-  void appWindow.onResized(() => void syncMaximized());
-  void syncMaximized();
-
+function bindMenus() {
   const menus = Array.from(document.querySelectorAll<HTMLElement>(".menu"));
   let menuMode = false;
 
@@ -1916,8 +1878,8 @@ function bindUpdater() {
   }, 2500);
 }
 
-setPlatformAppearance();
-bindTitlebar();
+void initializeTitlebar().catch((error) => console.error("Titlebar initialization failed:", error));
+bindMenus();
 bindInterface();
 bindUpdater();
 applyCamera();

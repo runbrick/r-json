@@ -1,0 +1,9 @@
+:root[data-platform="other"] {
+  --titlebar-height: 36px;
+  --titlebar-side-padding: 8px;
+  font-family: system-ui, sans-serif;
+}
+
+:root[data-platform="other"] .window-button { width: 42px; height: 36px; }
+:root[data-platform="other"] .window-button svg { width: 12px; height: 12px; stroke-width: 1.5; }
+:root[data-platform="other"] .window-close:hover { background: #e81123; color: #fff; }

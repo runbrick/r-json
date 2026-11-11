@@ -1,0 +1,8 @@
+:root[data-platform="macos"] {
+  --titlebar-height: 28px;
+  /* Reserve the native traffic lights at their system-provided position. */
+  --titlebar-side-padding: 78px;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+}
+
+:root[data-platform="macos"] .window-controls { display: none; }
