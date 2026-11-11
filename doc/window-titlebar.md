@@ -1,6 +1,6 @@
 # 平台标题栏
 
-顶部业务菜单保留在 `index.html`，菜单事件由 `src/main.ts` 的 `bindMenus()` 统一绑定。窗口按钮的绘制和平台布局由 `src/titlebar/` 管理，修改某个平台无需修改其他平台的绘制文件。
+顶部业务菜单定义在 `index.html`，下拉交互由 `src/main.ts` 的 `bindMenus()` 绑定，业务操作由 `bindInterface()` 和 `bindUpdater()` 绑定。macOS 桌面应用通过 `src/titlebar/macos-menu.ts` 将这些菜单项和分隔线映射到系统菜单栏，复用相同的操作处理，并为新建、打开、保存配置 ⌘N、⌘O、⌘S。原生菜单安装成功后隐藏窗口内的菜单；安装失败或浏览器预览时保留窗口内菜单。窗口按钮的绘制和平台布局由 `src/titlebar/` 管理，修改某个平台无需修改其他平台的绘制文件。
 
 | 平台 | 绘制入口 | 样式 | 窗口按钮 |
 | --- | --- | --- | --- |
@@ -11,7 +11,7 @@
 
 `index.ts` 负责选择平台；桌面环境通过 Rust 的 `window_platform` 命令获取实际编译平台，浏览器预览使用 Navigator 检测。`controls.ts` 仅共享按钮结构、可访问性标签、窗口操作与最大化状态同步。`titlebar.css` 定义公共布局，各平台 CSS 限定在自己的 `data-platform` 下。
 
-Windows 和 Linux 使用 `src-tauri/tauri.conf.json` 的无边框窗口。macOS 自动合并 `src-tauri/tauri.macos.conf.json`，使用 `decorations: true`、`titleBarStyle: "Overlay"` 和 `hiddenTitle: true`，在系统标题栏下绘制菜单背景，并为左侧原生按钮保留空间。不要在 macOS 分支添加模拟红黄绿按钮；原生按钮的形状、位置和交互交给系统处理。
+Windows 和 Linux 使用 `src-tauri/tauri.conf.json` 的无边框窗口。macOS 自动合并 `src-tauri/tauri.macos.conf.json`，使用 `decorations: true`、`titleBarStyle: "Overlay"` 和 `hiddenTitle: true`，为左侧原生按钮保留空间，应用 logo 对齐标题栏最右侧。“文件、工具、帮助”显示在屏幕顶部的系统菜单栏，同时保留应用、编辑、显示和窗口等系统常用菜单。不要在 macOS 分支添加模拟红黄绿按钮；原生按钮的形状、位置和交互交给系统处理。
 
 Tauri 合并平台配置时会替换整个 `app.windows` 数组，因此 macOS 配置需同时保留窗口大小、最小尺寸、居中及缩放设置。更改公共窗口参数时应同步检查此配置。
 

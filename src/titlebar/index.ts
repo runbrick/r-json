@@ -4,6 +4,7 @@ import { bindWindowControls } from "./controls";
 import { fallbackTitlebar } from "./fallback";
 import { linuxTitlebar } from "./linux";
 import { macosTitlebar } from "./macos";
+import { initializeMacosMenu } from "./macos-menu";
 import type { DesktopPlatform, PlatformTitlebar } from "./types";
 import { windowsTitlebar } from "./windows";
 import "./titlebar.css";
@@ -32,6 +33,7 @@ export async function initializeTitlebar() {
   document.documentElement.dataset.platform = platform;
   const host = document.querySelector<HTMLElement>("#window-controls")!;
   const controls = (titlebars[platform] ?? fallbackTitlebar).render(host);
+  if (desktop && platform === "macos") await initializeMacosMenu();
   if (!controls) return;
   if (desktop) {
     await bindWindowControls(controls, getCurrentWindow());
