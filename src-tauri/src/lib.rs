@@ -8,6 +8,7 @@ mod query;
 mod session;
 mod tree_node;
 mod validate;
+mod window_chrome;
 
 use std::fs;
 use std::path::Path;
@@ -275,6 +276,7 @@ pub fn run() {
             session: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
+            window_chrome::window_platform,
             load_document,
             graph_view,
             set_layout,

@@ -1,0 +1,16 @@
+:root[data-platform="windows"] {
+  --titlebar-height: 36px;
+  --titlebar-side-padding: 8px;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+:root[data-platform="windows"] .window-button {
+  width: 46px;
+  height: 36px;
+}
+:root[data-platform="windows"] .window-button svg {
+  width: 10px;
+  height: 10px;
+  stroke-width: 1.2;
+}
+:root[data-platform="windows"] .window-close:hover { background: #e81123; color: #fff; }

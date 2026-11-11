@@ -101,34 +101,17 @@ button:disabled { opacity: 0.4; cursor: default; }
 
 .app {
   display: grid;
-  grid-template-rows: 36px minmax(0, 1fr) 26px;
+  grid-template-rows: var(--titlebar-height, 36px) minmax(0, 1fr) 26px;
   height: 100%;
   background: var(--bg);
   color: var(--text);
 }
 
-.titlebar, .statusbar {
+.statusbar {
   display: flex;
   background: var(--toolbar);
   border-color: var(--line);
   border-style: solid;
-}
-.titlebar {
-  height: 36px;
-  align-items: stretch;
-  justify-content: space-between;
-  border-width: 0 0 1px;
-  user-select: none;
-}
-.titlebar-left,
-.titlebar-center {
-  display: flex;
-  align-items: stretch;
-  min-width: 0;
-}
-.titlebar-left { padding-left: 8px; }
-.titlebar-center {
-  flex: 1;
 }
 .statusbar {
   align-items: center;
@@ -324,69 +307,6 @@ button:disabled { opacity: 0.4; cursor: default; }
   background: var(--panel);
   box-shadow: var(--shadow);
 }
-
-.window-controls { display: flex; align-items: stretch; margin-left: 8px; }
-.window-button {
-  width: 46px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  color: var(--muted);
-}
-.window-button svg {
-  width: 10px;
-  height: 10px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.2;
-}
-.window-button:hover { background: var(--hover); color: var(--text); }
-.window-close:hover { background: #e81123; color: #fff; }
-
-:root[data-platform="windows"] {
-  --titlebar-height: 36px;
-  --window-button-width: 46px;
-  --window-button-height: 36px;
-  --titlebar-side-padding: 8px;
-  font-family: "Segoe UI", system-ui, sans-serif;
-}
-
-:root[data-platform="macos"] {
-  --titlebar-height: 28px;
-  --titlebar-side-padding: 78px;
-  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-}
-
-:root[data-platform="linux"] {
-  --titlebar-height: 38px;
-  --window-button-width: 38px;
-  --window-button-height: 38px;
-  --titlebar-side-padding: 10px;
-  font-family: Ubuntu, Cantarell, "Noto Sans", sans-serif;
-}
-
-:root[data-platform="other"] {
-  --titlebar-height: 36px;
-  --window-button-width: 42px;
-  --window-button-height: 36px;
-  --titlebar-side-padding: 8px;
-  font-family: system-ui, sans-serif;
-}
-
-.app { grid-template-rows: var(--titlebar-height, 36px) minmax(0, 1fr) 26px; }
-.titlebar { height: var(--titlebar-height, 36px); }
-.titlebar-left { padding-left: var(--titlebar-side-padding, 8px); }
-.window-button {
-  width: var(--window-button-width, 46px);
-  height: var(--window-button-height, 36px);
-}
-
-:root[data-platform="linux"] .window-button {
-  width: var(--window-button-width);
-  height: var(--window-button-height);
-}
-:root[data-platform="linux"] .window-button:hover { background: color-mix(in srgb, var(--text) 10%, transparent); }
-:root[data-platform="linux"] .window-close:hover { background: #c01c28; }
 
 .status-button {
   height: 22px;

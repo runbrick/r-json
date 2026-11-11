@@ -2,7 +2,16 @@
   "app": {
     "windows": [
       {
+        "label": "main",
+        "title": "R JSON",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 640,
+        "center": true,
         "decorations": true,
+        "resizable": true,
+        "shadow": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true
       }

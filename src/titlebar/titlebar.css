@@ -1,0 +1,19 @@
+.titlebar {
+  display: flex;
+  height: var(--titlebar-height, 36px);
+  align-items: stretch;
+  justify-content: space-between;
+  background: var(--toolbar);
+  border-bottom: 1px solid var(--line);
+  user-select: none;
+}
+.titlebar-left, .titlebar-center { display: flex; align-items: stretch; min-width: 0; }
+.titlebar-left { padding-left: var(--titlebar-side-padding, 8px); }
+.titlebar-center { flex: 1; }
+
+.window-controls { display: flex; align-items: stretch; margin-left: 8px; }
+.window-controls:empty { display: none; }
+.window-button { display: grid; place-items: center; padding: 0; color: var(--muted); }
+.window-button svg { display: block; fill: none; stroke: currentColor; }
+.window-button:hover { background: var(--hover); color: var(--text); }
+.window-button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
