@@ -1170,9 +1170,13 @@ async function openFile() {
 }
 
 async function saveFile() {
-  const path = await save({ defaultPath: fileName, filters: [{ name: "Data", extensions: ["json", "yaml", "xml", "csv", "toml", "txt"] }] });
-  if (!path) return;
-  await writeTextFile(path, currentEditorText());
+  try {
+    const path = await save({ defaultPath: fileName, filters: [{ name: "Data", extensions: ["json", "yaml", "xml", "csv", "toml", "txt"] }] });
+    if (!path) return;
+    await writeTextFile(path, currentEditorText());
+  } catch (error) {
+    openModal("保存失败", `文件未能保存，请检查目标位置和写入权限。\n\n${String(error)}`);
+  }
 }
 
 async function runTool(action: string) {
