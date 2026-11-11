@@ -154,6 +154,7 @@
           <span id="stats">未加载</span>
         </div>
         <div class="status-side">
+          <button id="update-indicator" class="status-button update-indicator hidden" type="button" aria-label="查看软件更新进度"></button>
           <span id="app-version">v0.1.0</span>
           <span id="editor-state">JSON</span>
           <button id="toggle-editor" class="status-button">编辑器</button>
@@ -212,7 +213,7 @@
           <button id="update-modal-close" type="button">✕</button>
         </header>
         <div class="update-body">
-          <p id="update-status">启动后会自动检查 GitHub 上的新版本。</p>
+          <p id="update-status" role="status">启动后会自动检查 GitHub 上的新版本。</p>
           <dl class="update-meta">
             <div>
               <dt>当前版本</dt>
@@ -234,6 +235,7 @@
           <div class="cluster">
             <button id="update-later" class="status-button" type="button">关闭</button>
             <button id="update-check" class="status-button" type="button">重新检查</button>
+            <button id="update-background" class="status-button hidden" type="button">后台更新</button>
             <button id="update-install" class="primary hidden" type="button">立即更新</button>
           </div>
         </footer>
