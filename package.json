@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "test:updater": "node --test scripts/test-updater.mjs",
     "tauri": "tauri",
     "version": "node scripts/sync-version.mjs"
   },

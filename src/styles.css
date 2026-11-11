@@ -396,6 +396,13 @@ button:disabled { opacity: 0.4; cursor: default; }
   font-size: 12px;
 }
 .status-button:hover { background: var(--hover); color: var(--text); }
+.update-indicator {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent);
+}
 .status-icon {
   width: 22px;
   height: 22px;
